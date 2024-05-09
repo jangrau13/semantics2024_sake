@@ -1,0 +1,4 @@
+[submodule "pdf_js"]
+	path = pdf_js
+	url = https://github.com/jangrau13/pdf.js
+	branch = poc
