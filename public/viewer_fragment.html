@@ -1,0 +1,373 @@
+<div id="janpdf" xmlns="http://www.w3.org/1999/html">
+    <div id="outerContainer">
+        <div id="sidebarContainer">
+            <div id="toolbarSidebar">
+                <div id="toolbarSidebarLeft">
+                    <div id="sidebarViewButtons" class="splitToolbarButton toggled" role="radiogroup">
+                        <button id="viewThumbnail" class="toolbarButton toggled" title="Show Thumbnails" tabindex="2"
+                                data-l10n-id="pdfjs-thumbs-button" role="radio" aria-checked="true"
+                                aria-controls="thumbnailView">
+                            <span data-l10n-id="pdfjs-thumbs-button-label">Thumbnails</span>
+                        </button>
+                        <button id="viewOutline" class="toolbarButton"
+                                title="Show Document Outline (double-click to expand/collapse all items)" tabindex="3"
+                                data-l10n-id="pdfjs-document-outline-button" role="radio" aria-checked="false"
+                                aria-controls="outlineView">
+                            <span data-l10n-id="pdfjs-document-outline-button-label">Document Outline</span>
+                        </button>
+                        <button id="viewAttachments" class="toolbarButton" title="Show Attachments" tabindex="4"
+                                data-l10n-id="pdfjs-attachments-button" role="radio" aria-checked="false"
+                                aria-controls="attachmentsView">
+                            <span data-l10n-id="pdfjs-attachments-button-label">Attachments</span>
+                        </button>
+                        <button id="viewLayers" class="toolbarButton"
+                                title="Show Layers (double-click to reset all layers to the default state)" tabindex="5"
+                                data-l10n-id="pdfjs-layers-button" role="radio" aria-checked="false"
+                                aria-controls="layersView">
+                            <span data-l10n-id="pdfjs-layers-button-label">Layers</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="toolbarSidebarRight">
+                    <div id="outlineOptionsContainer">
+                        <div class="verticalToolbarSeparator"></div>
+
+                        <button id="currentOutlineItem" class="toolbarButton" disabled="disabled"
+                                title="Find Current Outline Item" tabindex="6"
+                                data-l10n-id="pdfjs-current-outline-item-button">
+                            <span data-l10n-id="pdfjs-current-outline-item-button-label">Current Outline Item</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div id="sidebarContent">
+                <div id="thumbnailView">
+                </div>
+                <div id="outlineView" class="hidden">
+                </div>
+                <div id="attachmentsView" class="hidden">
+                </div>
+                <div id="layersView" class="hidden">
+                </div>
+            </div>
+            <div id="sidebarResizer"></div>
+        </div>  <!-- sidebarContainer -->
+
+        <div id="mainContainer">
+            <div class="findbar hidden doorHanger" id="findbar">
+
+
+                <div id="findbarOptionsOneContainer">
+                    <input type="checkbox" id="findHighlightAll" class="toolbarField" tabindex="94">
+                    <label for="findHighlightAll" class="toolbarLabel" data-l10n-id="pdfjs-find-highlight-checkbox">Highlight
+                        All</label>
+                    <input type="checkbox" id="findMatchCase" class="toolbarField" tabindex="95">
+                    <label for="findMatchCase" class="toolbarLabel" data-l10n-id="pdfjs-find-match-case-checkbox-label">Match
+                        Case</label>
+                </div>
+                <div id="findbarOptionsTwoContainer">
+                    <input type="checkbox" id="findMatchDiacritics" class="toolbarField" tabindex="96">
+                    <label for="findMatchDiacritics" class="toolbarLabel"
+                           data-l10n-id="pdfjs-find-match-diacritics-checkbox-label">Match Diacritics</label>
+                    <input type="checkbox" id="findEntireWord" class="toolbarField" tabindex="97">
+                    <label for="findEntireWord" class="toolbarLabel"
+                           data-l10n-id="pdfjs-find-entire-word-checkbox-label">Whole Words</label>
+                </div>
+
+                <div id="findbarMessageContainer" aria-live="polite">
+                    <span id="findResultsCount" class="toolbarLabel"></span>
+                    <span id="findMsg" class="toolbarLabel"></span>
+                </div>
+            </div>  <!-- findbar -->
+
+            <div class="editorParamsToolbar hidden doorHangerRight" id="editorHighlightParamsToolbar">
+                <div id="highlightParamsToolbarContainer" class="editorParamsToolbarContainer">
+                    <div id="editorHighlightColorPicker" class="colorPicker">
+                        <span id="highlightColorPickerLabel" class="editorParamsLabel"
+                              data-l10n-id="pdfjs-editor-highlight-colorpicker-label">Highlight color</span>
+                    </div>
+                    <div id="editorHighlightThickness">
+                        <label for="editorFreeHighlightThickness" class="editorParamsLabel"
+                               data-l10n-id="pdfjs-editor-free-highlight-thickness-input">Thickness</label>
+                        <div class="thicknessPicker">
+                            <input type="range" id="editorFreeHighlightThickness" class="editorParamsSlider"
+                                   data-l10n-id="pdfjs-editor-free-highlight-thickness-title" value="12" min="8"
+                                   max="24" step="1" tabindex="101">
+                        </div>
+                    </div>
+                    <div id="editorHighlightVisibility">
+                        <div class="divider"></div>
+                        <div class="toggler">
+                            <label for="editorHighlightShowAll" class="editorParamsLabel"
+                                   data-l10n-id="pdfjs-editor-highlight-show-all-button-label">Show all</label>
+                            <button id="editorHighlightShowAll" class="toggle-button"
+                                    data-l10n-id="pdfjs-editor-highlight-show-all-button" aria-pressed="true"
+                                    tabindex="102"></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="editorParamsToolbar hidden doorHangerRight" id="editorFreeTextParamsToolbar">
+                <div class="editorParamsToolbarContainer">
+                    <div class="editorParamsSetter">
+                        <label for="editorFreeTextColor" class="editorParamsLabel"
+                               data-l10n-id="pdfjs-editor-free-text-color-input">Color</label>
+                        <input type="color" id="editorFreeTextColor" class="editorParamsColor" tabindex="103">
+                    </div>
+                    <div class="editorParamsSetter">
+                        <label for="editorFreeTextFontSize" class="editorParamsLabel"
+                               data-l10n-id="pdfjs-editor-free-text-size-input">Size</label>
+                        <input type="range" id="editorFreeTextFontSize" class="editorParamsSlider" value="10" min="5"
+                               max="100" step="1" tabindex="104">
+                    </div>
+                </div>
+            </div>
+
+            <div class="editorParamsToolbar hidden doorHangerRight" id="editorInkParamsToolbar">
+                <div class="editorParamsToolbarContainer">
+                    <div class="editorParamsSetter">
+                        <label for="editorInkColor" class="editorParamsLabel"
+                               data-l10n-id="pdfjs-editor-ink-color-input">Color</label>
+                        <input type="color" id="editorInkColor" class="editorParamsColor" tabindex="105">
+                    </div>
+                    <div class="editorParamsSetter">
+                        <label for="editorInkThickness" class="editorParamsLabel"
+                               data-l10n-id="pdfjs-editor-ink-thickness-input">Thickness</label>
+                        <input type="range" id="editorInkThickness" class="editorParamsSlider" value="1" min="1"
+                               max="20" step="1" tabindex="106">
+                    </div>
+                    <div class="editorParamsSetter">
+                        <label for="editorInkOpacity" class="editorParamsLabel"
+                               data-l10n-id="pdfjs-editor-ink-opacity-input">Opacity</label>
+                        <input type="range" id="editorInkOpacity" class="editorParamsSlider" value="100" min="1"
+                               max="100" step="1" tabindex="107">
+                    </div>
+                </div>
+            </div>
+
+
+
+            <div id="secondaryToolbar" class="secondaryToolbar hidden doorHangerRight">
+                <div id="secondaryToolbarButtonContainer">
+                    <!--#if GENERIC-->
+
+                    <!--#endif-->
+
+                    <button id="secondaryPrint" class="secondaryToolbarButton visibleMediumView" title="Print"
+                            tabindex="52" data-l10n-id="pdfjs-print-button">
+                        <span data-l10n-id="pdfjs-print-button-label">Print</span>
+                    </button>
+
+                    <button id="secondaryDownload" class="secondaryToolbarButton visibleMediumView" title="Save"
+                            tabindex="53" data-l10n-id="pdfjs-save-button">
+                        <span data-l10n-id="pdfjs-save-button-label">Save</span>
+                    </button>
+
+                    <!--#if GENERIC-->
+                    <div class="horizontalToolbarSeparator"></div>
+                    <!--#else-->
+                    <!--        <div class="horizontalToolbarSeparator visibleMediumView"></div>-->
+                    <!--#endif-->
+
+                    <button id="presentationMode" class="secondaryToolbarButton" title="Switch to Presentation Mode"
+                            tabindex="54" data-l10n-id="pdfjs-presentation-mode-button">
+                        <span data-l10n-id="pdfjs-presentation-mode-button-label">Presentation Mode</span>
+                    </button>
+
+                    <a href="#" id="viewBookmark" class="secondaryToolbarButton"
+                       title="Current Page (View URL from Current Page)" tabindex="55"
+                       data-l10n-id="pdfjs-bookmark-button">
+                        <span data-l10n-id="pdfjs-bookmark-button-label">Current Page</span>
+                    </a>
+
+                    <div id="viewBookmarkSeparator" class="horizontalToolbarSeparator"></div>
+
+
+
+                    <div class="horizontalToolbarSeparator"></div>
+
+
+
+                    <div class="horizontalToolbarSeparator"></div>
+
+                    <div id="cursorToolButtons" role="radiogroup">
+                        <button id="cursorSelectTool" class="secondaryToolbarButton toggled"
+                                title="Enable Text Selection Tool" tabindex="60"
+                                data-l10n-id="pdfjs-cursor-text-select-tool-button" role="radio" aria-checked="true">
+                            <span data-l10n-id="pdfjs-cursor-text-select-tool-button-label">Text Selection Tool</span>
+                        </button>
+                        <button id="cursorHandTool" class="secondaryToolbarButton" title="Enable Hand Tool"
+                                tabindex="61" data-l10n-id="pdfjs-cursor-hand-tool-button" role="radio"
+                                aria-checked="false">
+                            <span data-l10n-id="pdfjs-cursor-hand-tool-button-label">Hand Tool</span>
+                        </button>
+                    </div>
+
+                    <div class="horizontalToolbarSeparator"></div>
+
+                    <div id="scrollModeButtons" role="radiogroup">
+                        <button id="scrollPage" class="secondaryToolbarButton" title="Use Page Scrolling" tabindex="62"
+                                data-l10n-id="pdfjs-scroll-page-button" role="radio" aria-checked="false">
+                            <span data-l10n-id="pdfjs-scroll-page-button-label">Page Scrolling</span>
+                        </button>
+                        <button id="scrollVertical" class="secondaryToolbarButton toggled"
+                                title="Use Vertical Scrolling" tabindex="63" data-l10n-id="pdfjs-scroll-vertical-button"
+                                role="radio" aria-checked="true">
+                            <span data-l10n-id="pdfjs-scroll-vertical-button-label">Vertical Scrolling</span>
+                        </button>
+                        <button id="scrollHorizontal" class="secondaryToolbarButton" title="Use Horizontal Scrolling"
+                                tabindex="64" data-l10n-id="pdfjs-scroll-horizontal-button" role="radio"
+                                aria-checked="false">
+                            <span data-l10n-id="pdfjs-scroll-horizontal-button-label">Horizontal Scrolling</span>
+                        </button>
+                        <button id="scrollWrapped" class="secondaryToolbarButton" title="Use Wrapped Scrolling"
+                                tabindex="65" data-l10n-id="pdfjs-scroll-wrapped-button" role="radio"
+                                aria-checked="false">
+                            <span data-l10n-id="pdfjs-scroll-wrapped-button-label">Wrapped Scrolling</span>
+                        </button>
+                    </div>
+
+                    <div class="horizontalToolbarSeparator"></div>
+
+
+
+                </div>
+            </div>  <!-- secondaryToolbar -->
+
+            <div class="toolbar">
+                <div id="toolbarContainer">
+                    <div id="toolbarViewer">
+                        <div id="toolbarViewerLeft">
+                            <div class="toolbarButtonSpacer"></div>
+                        </div>
+                        <div id="toolbarViewerRight">
+                            <div id="editorModeButtons" class="splitToolbarButton toggled" role="radiogroup">
+
+                                <button id="editorFreeText" class="toolbarButton" disabled="disabled" title="Text"
+                                        role="radio" aria-checked="false" aria-controls="editorFreeTextParamsToolbar"
+                                        tabindex="32" data-l10n-id="pdfjs-editor-free-text-button">
+                                    <span data-l10n-id="pdfjs-editor-free-text-button-label">Text</span>
+                                </button>
+                                <button id="editorInk" class="toolbarButton" disabled="disabled" title="Draw"
+                                        role="radio" aria-checked="false" aria-controls="editorInkParamsToolbar"
+                                        tabindex="33" data-l10n-id="pdfjs-editor-ink-button">
+                                    <span data-l10n-id="pdfjs-editor-ink-button-label">Draw</span>
+                                </button>
+                            </div>
+                            <div class="verticalToolbarSeparator hiddenMediumView"></div>
+
+                            <button id="secondaryToolbarToggle" class="toolbarButton" title="Tools" tabindex="43"
+                                    data-l10n-id="pdfjs-tools-button" aria-expanded="false"
+                                    aria-controls="secondaryToolbar">
+                                <span data-l10n-id="pdfjs-tools-button-label">Tools</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="loadingBar">
+                        <div class="progress">
+                            <div class="glimmer">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="viewerContainer" tabindex="0">
+                <div id="viewer" class="pdfViewer"></div>
+            </div>
+        </div> <!-- mainContainer -->
+
+        <div id="dialogContainer">
+            <dialog id="passwordDialog">
+                <div class="row">
+                    <label for="password" id="passwordText" data-l10n-id="pdfjs-password-label">Enter the password to
+                        open this PDF file:</label>
+                </div>
+                <div class="row">
+                    <input type="password" id="password" class="toolbarField">
+                </div>
+                <div class="buttonRow">
+                    <button id="passwordCancel" class="dialogButton"><span data-l10n-id="pdfjs-password-cancel-button">Cancel</span>
+                    </button>
+                    <button id="passwordSubmit" class="dialogButton"><span
+                            data-l10n-id="pdfjs-password-ok-button">OK</span></button>
+                </div>
+            </dialog>
+        </div>  <!-- dialogContainer -->
+        <div style="display: none">
+            <!--not used Actions AltText-->
+            <dialog id="altTextDialog"/>
+            <dialog id="documentPropertiesDialog"/>
+            <button id="altTextCancel"></button>
+            <button id="altTextSave"></button>
+            <button id="decorativeButton"></button>
+            <button id="descriptionButton"></button>
+            <!--not used Actions PDFDocumentProperties-->
+            <div id="fileNameDiv"></div>
+            <div id="fileSizeDiv"></div>
+            <div id="titleDiv"></div>
+            <div id="authorDiv"></div>
+            <div id="subjectDiv"></div>
+            <div id="keywordsDiv"></div>
+            <div id="creationDateDiv"></div>
+            <div id="modificationDateDiv"></div>
+            <div id="creatorDiv"></div>
+            <div id="producerDiv"></div>
+            <div id="versionDiv"></div>
+            <div id="pageCountDiv"></div>
+            <div id="pageSizeDiv"></div>
+            <div id="linearizedDiv"></div>
+            <div id="documentPropertiesClose"></div>
+            <!--not used Actions Sidebar-->
+            <button id="sidebarToggle"></button>
+            <button id="viewFind"></button>
+            <button id="print"></button>
+
+            <button id="editorStamp"></button>
+            <button id="editorStampParamsToolbar"></button>
+            <button id="editorStampAddImage"></button>
+            <button id="documentProperties"></button>
+            <div id="spreadModeButtons" role="radiogroup">
+                <button id="spreadNone"  title="Do not join page spreads"
+                        tabindex="66" data-l10n-id="pdfjs-spread-none-button" role="radio" aria-checked="true">
+                    <span data-l10n-id="pdfjs-spread-none-button-label">No Spreads</span>
+                </button>
+                <button id="spreadOdd"
+                        title="Join page spreads starting with odd-numbered pages" tabindex="67"
+                        data-l10n-id="pdfjs-spread-odd-button" role="radio" aria-checked="false">
+                    <span data-l10n-id="pdfjs-spread-odd-button-label">Odd Spreads</span>
+                </button>
+                <button id="spreadEven"
+                        title="Join page spreads starting with even-numbered pages" tabindex="68"
+                        data-l10n-id="pdfjs-spread-even-button" role="radio" aria-checked="false">
+                    <span data-l10n-id="pdfjs-spread-even-button-label">Even Spreads</span>
+                </button>
+            </div>
+            <button id="pageRotateCw" class="secondaryToolbarButton" title="Rotate Clockwise" tabindex="58"
+                    data-l10n-id="pdfjs-page-rotate-cw-button">
+                <span data-l10n-id="pdfjs-page-rotate-cw-button-label">Rotate Clockwise</span>
+            </button>
+            <button id="pageRotateCcw" class="secondaryToolbarButton" title="Rotate Counterclockwise"
+                    tabindex="59" data-l10n-id="pdfjs-page-rotate-ccw-button">
+                <span data-l10n-id="pdfjs-page-rotate-ccw-button-label">Rotate Counterclockwise</span>
+            </button>
+
+
+        </div>
+
+    </div> <!-- outerContainer -->
+
+    <div id="rdfa-tmp-storage" style="display: none;"></div>
+
+    <link rel="resource" type="application/l10n" href="pdf_api/locale/locale.json">
+    <script src="pdf_api/js/pdf.mjs" type="module"></script>
+
+    <link rel="stylesheet" href="pdf_api/css/viewer.css">
+
+    <script src="pdf_api/js/viewer.mjs" type="module"></script>
+    <!-- Include HTMX -->
+    <script src="https://unpkg.com/htmx.org"></script>
+
+</div>
