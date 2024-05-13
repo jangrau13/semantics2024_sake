@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>PDF Annotator Tool</title>
+    <!-- Include HTMX -->
+    <script src="https://unpkg.com/htmx.org"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            width: 99vw;
+            font-family: Arial, sans-serif;
+            background-color: #f8f8f8;
+            justify-content: space-between;
+        }
+
+        #header {
+            width: 100%;
+            padding: 20px 10px;
+            text-align: center;
+        }
+
+        #content-container {
+            display: flex;
+            width: 100%;
+            flex: 1; /* Flexibly expand to take up remaining height */
+            justify-content: space-between; /* Space between the sidebars */
+            border: #2b542c;
+            border-radius: 10px;
+        }
+
+        #fragment-container {
+            flex-grow: 1; /* Takes remaining horizontal space */
+            margin-right: 10px; /* Space between fragment container and sidebar */
+            border: #2b542c;
+            border-radius: 10px;
+            background-color: #f8f8f8;
+            min-width: 50vw;
+        }
+
+        h1 {
+            padding: 10px;
+            margin: 10px;
+            color: #00CF95;
+        }
+
+        .mySidebar h2,
+        .mySidebar .button-container {
+            border-bottom: 1px solid #00CF95; /* Light underline for the header for some visual separation */
+            padding-bottom: 10px; /* Space below the text */
+            margin-bottom: 20px; /* Space below the underline */
+        }
+
+        .mySidebar {
+            flex-grow: 1; /* Takes remaining horizontal space */
+            background-color: #f8f8f8;
+            color: #00CF95;
+            border-color: #00CF95;
+            border-style: ridge;
+            border-radius: 10px;
+            padding: 10px;
+            margin: 10px; /* Space between sections */
+            overflow-y: auto; /* Enable scrolling if content is long */
+            max-width: 15vw;
+        }
+
+        .mySidebar button, .mySidebar input, .mySidebar select {
+            background-color: #f8f8f8; /* Light, complementary color for buttons and inputs */
+            color: #00CF95; /* Dark color for text for readability */
+            border: 2px solid #00CF95;
+            padding: 8px 16px; /* Padding inside buttons */
+            margin: 5px; /* Margin around buttons */
+            border-radius: 5px; /* Rounded corners */
+            cursor: pointer; /* Cursor changes to pointer to indicate clickable items */
+        }
+
+        .mySidebar button:hover, .mySidebar input:hover, .mySidebar select:hover {
+            background-color: #00CF95; /* Slightly darker shade on hover for interactive feedback */
+            color: #f8f8f8;
+        }
+
+        .mySidebar input[type="number"], .mySidebar input[type="text"] {
+            width: calc(100% - 32px); /* Full width minus padding */
+        }
+
+        .pdf_utils {
+            display: none;
+        }
+
+        .pdf_open {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+<div id="header">
+    <h1>My PDF Annotator</h1>
+    <div id="myPDFTitle"></div>
+    <div id="pageCountField"></div>
+    <div id="pdf_id" data-id="{{myID}}"></div>
+</div>
+<div id="content-container">
+    <div class="mySidebar" id="left-sidebar">
+        <h2>Tools</h2>
+        <div class="pdf_utils">
+            <div class="button-container">
+                <div id="scaleSelectContainer">
+                    <select data-l10n-id="pdfjs-zoom-select" id="scaleSelect" tabindex="23" title="Zoom">
+                        <option data-l10n-id="pdfjs-page-scale-auto" id="pageAutoOption" selected="selected" title=""
+                                value="auto">Automatic Zoom
+                        </option>
+                        <option data-l10n-id="pdfjs-page-scale-actual" id="pageActualOption" title=""
+                                value="page-actual">
+                            Actual
+                            Size
+                        </option>
+                        <option data-l10n-id="pdfjs-page-scale-fit" id="pageFitOption" title=""
+                                value="page-fit">Page Fit
+                        </option>
+                        <option data-l10n-id="pdfjs-page-scale-width" id="pageWidthOption" title="" value="page-width">
+                            Page
+                            Width
+                        </option>
+                        <option data-l10n-args='{ "scale": 0 }' data-l10n-id="pdfjs-page-scale-percent"
+                                disabled="disabled"
+                                hidden="true" id="customScaleOption"
+                                title="" value="custom">0%
+                        </option>
+                        <option data-l10n-args='{ "scale": 50 }' data-l10n-id="pdfjs-page-scale-percent" title=""
+                                value="0.5">50%
+                        </option>
+                        <option data-l10n-args='{ "scale": 75 }' data-l10n-id="pdfjs-page-scale-percent" title=""
+                                value="0.75">75%
+                        </option>
+                        <option data-l10n-args='{ "scale": 100 }' data-l10n-id="pdfjs-page-scale-percent" title=""
+                                value="1">100%
+                        </option>
+                        <option data-l10n-args='{ "scale": 125 }' data-l10n-id="pdfjs-page-scale-percent" title=""
+                                value="1.25">125%
+                        </option>
+                        <option data-l10n-args='{ "scale": 150 }' data-l10n-id="pdfjs-page-scale-percent" title=""
+                                value="1.5">150%
+                        </option>
+                        <option data-l10n-args='{ "scale": 200 }' data-l10n-id="pdfjs-page-scale-percent" title=""
+                                value="2">200%
+                        </option>
+                        <option data-l10n-args='{ "scale": 300 }' data-l10n-id="pdfjs-page-scale-percent" title=""
+                                value="3">300%
+                        </option>
+                        <option data-l10n-args='{ "scale": 400 }' data-l10n-id="pdfjs-page-scale-percent" title=""
+                                value="4">400%
+                        </option>
+                    </select>
+                </div>
+                <button data-l10n-id="pdfjs-zoom-out-button" id="zoomOut" tabindex="21"
+                        title="Zoom Out">
+                    <span data-l10n-id="pdfjs-zoom-out-button-label">Zoom Out</span>
+                </button>
+                <button data-l10n-id="pdfjs-zoom-in-button" id="zoomIn" tabindex="22"
+                        title="Zoom In">
+                    <span data-l10n-id="pdfjs-zoom-in-button-label">Zoom In</span>
+                </button>
+            </div>
+            <div class="button-container">
+                <button data-l10n-id="pdfjs-previous-button" id="previous" tabindex="13"
+                        title="Previous Page">
+                    <span data-l10n-id="pdfjs-previous-button-label">Previous Page</span>
+                </button>
+                <button data-l10n-id="pdfjs-next-button" id="next" tabindex="14"
+                        title="Next Page">
+                    <span data-l10n-id="pdfjs-next-button-label">Next Page</span>
+                </button>
+                <button data-l10n-id="pdfjs-first-page-button" id="firstPage" tabindex="56"
+                        title="Go to First Page">
+                    <span data-l10n-id="pdfjs-first-page-button-label">Go to First Page</span>
+                </button>
+                <button data-l10n-id="pdfjs-last-page-button" id="lastPage" tabindex="57"
+                        title="Go to Last Page">
+                    <span data-l10n-id="pdfjs-last-page-button-label">Go to Last Page</span>
+                </button>
+            </div>
+            <div class="button-container">
+                <label>Jump to Page</label>
+                <input autocomplete="off" data-l10n-id="pdfjs-page-input" id="pageNumber" min="1" tabindex="15"
+                       title="Page"
+                       type="number" value="1">
+                <span id="numPages"></span>
+            </div>
+            <div class="button-container">
+                <input aria-invalid="false" data-l10n-id="pdfjs-find-input" id="findInput"
+                       placeholder="Find in document…"
+                       tabindex="91" title="Find">
+                <button data-l10n-id="pdfjs-find-previous-button"
+                        id="findPrevious" tabindex="92"
+                        title="Find the previous occurrence of the phrase">
+                    <span data-l10n-id="pdfjs-find-previous-button-label">Find Previous</span>
+                </button>
+                <button data-l10n-id="pdfjs-find-next-button" id="findNext"
+                        tabindex="93" title="Find the next occurrence of the phrase">
+                    <span data-l10n-id="pdfjs-find-next-button-label">Find Next</span>
+                </button>
+            </div>
+
+            <div class="button-container">
+                <button aria-checked="false" data-l10n-id="pdfjs-cursor-hand-tool-button"
+                        id="cursorHandTool" role="radio" tabindex="61"
+                        title="Enable Hand Tool">
+                    <span data-l10n-id="pdfjs-cursor-hand-tool-button-label">Hand Tool</span>
+                </button>
+                <button data-l10n-id="pdfjs-presentation-mode-button" id="presentationMode"
+                        tabindex="54" title="Switch to Presentation Mode">
+                    <span data-l10n-id="pdfjs-presentation-mode-button-label">Presentation Mode</span>
+                </button>
+                <button
+                        data-l10n-id="pdfjs-cursor-text-select-tool-button" id="cursorSelectTool"
+                        role="radio" tabindex="60" title="Enable Text Selection Tool">
+                    <span data-l10n-id="pdfjs-cursor-text-select-tool-button-label">Text Selection Tool</span>
+                </button>
+            </div>
+
+            <div class="button-container">
+                <button aria-checked="false" data-l10n-id="pdfjs-scroll-page-button" id="scrollPage"
+                        role="radio" tabindex="62" title="Use Page Scrolling">
+                    <span data-l10n-id="pdfjs-scroll-page-button-label">Page Scrolling</span>
+                </button>
+                <button aria-checked="true"
+                        data-l10n-id="pdfjs-scroll-vertical-button" id="scrollVertical" role="radio"
+                        tabindex="63" title="Use Vertical Scrolling">
+                    <span data-l10n-id="pdfjs-scroll-vertical-button-label">Vertical Scrolling</span>
+                </button>
+            </div>
+            <div class="button-container">
+                <button
+                        data-l10n-id="pdfjs-editor-highlight-show-all-button" id="editorHighlightShowAll"
+                        tabindex="102">Toggle Annotations
+                </button>
+            </div>
+            <div class="button-container">
+
+                <button data-l10n-id="pdfjs-save-button" id="download" tabindex="42"
+                        title="Download">
+                    <span data-l10n-id="pdfjs-save-button-label">Download PDF</span>
+                </button>
+            </div>
+        </div>
+        <button data-l10n-id="pdfjs-open-button" id="pdf_open" tabindex="43"
+                title="Open">
+            <span data-l10n-id="pdfjs-open-button-label">Open PDF</span>
+        </button>
+    </div>
+    <div id="fragment-container">
+        <!-- Button to load content from viewer_fragment.html -->
+        <button hx-get="/pdf_viewer" hx-target="#fragment-container" hx-trigger="load">
+            Load Content
+        </button>
+        <!-- Container where the fragment will be loaded -->
+    </div>
+
+    <div class="mySidebar" id="right-sidebar">
+        <h2>Annotate</h2>
+        <div class="button-container pdf_utils">
+            <button onclick="dispatchPDFEvent('#998833')">Concept 1</button>
+            <button onclick="dispatchPDFEvent('#FF5733')">Concept 2</button>
+            <button onclick="dispatchPDFEvent('#357ABD')">Concept 3</button>
+        </div>
+    </div>
+</div>
+</div>
+
+<script>
+    function checkViewer() {
+        // Use a delay to allow HTMX to load content, or adjust according to how HTMX operates
+        const intervalId = setInterval(() => {
+            const pdfTitle = document.getElementById("myPDFTitle")
+
+            const viewerExists = pdfTitle.textContent.length > 4
+
+            const elements = document.getElementsByClassName("pdf_utils");
+            for (let elementsKey in elements) {
+                if (elements[elementsKey].style) {
+
+                    elements[elementsKey].style.display = viewerExists ? 'block' : 'none'
+                }
+            }
+            const openElement = document.getElementById("pdf_open");
+            if (!viewerExists) {
+                openElement.style.display = 'block'
+            }
+            if (viewerExists) {
+                clearInterval(intervalId)
+            }
+        }, 1000); // Adjust timeout as needed based on testing
+    }
+
+    checkViewer();
+</script>
+</body>
+</html>

@@ -16034,8 +16034,11 @@ const PDFViewerApplication = {
     let file;
     const queryString = document.location.search.substring(1);
     const params = (0,_ui_utils_js__WEBPACK_IMPORTED_MODULE_0__.parseQueryString)(queryString);
-    file = params.get("file") ?? _app_options_js__WEBPACK_IMPORTED_MODULE_2__.AppOptions.get("defaultUrl");
-    validateFileURL(file);
+    const pdfID = document.getElementById("pdf_id").dataset.id;
+    if (pdfID.length > 1) {
+      file = "/pdf_files/pdf/" + pdfID + ".pdf";
+      validateFileURL(file);
+    }
     const fileInput = this._openFileInput = document.createElement("input");
     fileInput.id = "fileInput";
     fileInput.hidden = true;
@@ -16197,7 +16200,10 @@ const PDFViewerApplication = {
       return;
     }
     const editorIndicator = this._hasAnnotationEditors && !this.pdfRenderingQueue.printing;
-    document.title = `${editorIndicator ? "* " : ""}${title}`;
+    const subTitleComponent = document.getElementById("myPDFTitle");
+    if (subTitleComponent) {
+      subTitleComponent.textContent = `${editorIndicator ? "* " : ""}${title}`;
+    }
   },
   get _docFilename() {
     return this._contentDispositionFilename || (0,pdfjs_lib__WEBPACK_IMPORTED_MODULE_1__.getPdfFilenameFromUrl)(this.url);
@@ -18256,13 +18262,13 @@ const defaultOptions = {
     kind: OptionKind.WORKER
   },
   workerSrc: {
-    value: "pdf_api/js/pdf.worker.mjs",
+    value: "/pdf_api/js/pdf.worker.mjs",
     kind: OptionKind.WORKER
   }
 };
 {
   defaultOptions.defaultUrl = {
-    value: "pdf/compressed.tracemonkey-pldi-09.pdf",
+    value: "",
     kind: OptionKind.VIEWER
   };
   defaultOptions.sandboxBundleSrc = {
@@ -25137,7 +25143,7 @@ class PDFViewer {
   #scaleTimeoutId = null;
   #textLayerMode = _ui_utils_js__WEBPACK_IMPORTED_MODULE_1__.TextLayerMode.ENABLE;
   constructor(options) {
-    const viewerVersion = "4.2.57";
+    const viewerVersion = "4.2.58";
     if (pdfjs_lib__WEBPACK_IMPORTED_MODULE_0__.version !== viewerVersion) {
       throw new Error(`The API version "${pdfjs_lib__WEBPACK_IMPORTED_MODULE_0__.version}" does not match the Viewer version "${viewerVersion}".`);
     }
@@ -28723,8 +28729,8 @@ _app_js__WEBPACK_IMPORTED_MODULE_3__ = (__webpack_async_dependencies__.then ? (a
 
 
 
-const pdfjsVersion = "4.2.57";
-const pdfjsBuild = "a8e02953e";
+const pdfjsVersion = "4.2.58";
+const pdfjsBuild = "63de9c0e8";
 const AppConstants = {
   LinkTarget: _pdf_link_service_js__WEBPACK_IMPORTED_MODULE_2__.LinkTarget,
   RenderingStates: _ui_utils_js__WEBPACK_IMPORTED_MODULE_0__.RenderingStates,

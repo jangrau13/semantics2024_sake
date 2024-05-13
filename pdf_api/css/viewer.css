@@ -2771,12 +2771,12 @@
   --editor-toolbar-base-offset:105px;
 
   --main-color:rgb(12 12 13);
-  --body-bg-color:rgb(212 212 215);
+  --body-bg-color:rgb(248, 248, 248);
   --progressBar-color:rgb(10 132 255);
   --progressBar-bg-color:rgb(221 221 222);
   --progressBar-blend-color:rgb(116 177 239);
   --scrollbar-color:auto;
-  --scrollbar-bg-color:auto;
+  --scrollbar-bg-color:rgb(248, 248, 248);
   --toolbar-icon-bg-color:rgb(0 0 0);
   --toolbar-icon-hover-bg-color:rgb(0 0 0);
 
@@ -2868,12 +2868,12 @@
 @media (prefers-color-scheme: dark){
   :root:where(:not(.is-light)){
     --main-color:rgb(249 249 250);
-    --body-bg-color:rgb(42 42 46);
-    --progressBar-color:rgb(0 96 223);
+    --body-bg-color:rgb(248, 248, 248);
+    --progressBar-color:rgb(30, 223, 0);
     --progressBar-bg-color:rgb(40 40 43);
     --progressBar-blend-color:rgb(20 68 133);
     --scrollbar-color:rgb(121 121 123);
-    --scrollbar-bg-color:rgb(35 35 39);
+    --scrollbar-bg-color:rgb(248, 248, 248);
     --toolbar-icon-bg-color:rgb(255 255 255);
     --toolbar-icon-hover-bg-color:rgb(255 255 255);
 
@@ -2909,12 +2909,12 @@
 
 :root:where(.is-dark){
     --main-color:rgb(249 249 250);
-    --body-bg-color:rgb(42 42 46);
-    --progressBar-color:rgb(0 96 223);
+    --body-bg-color:rgb(248, 248, 248);
+    --progressBar-color:rgb(30, 223, 0);
     --progressBar-bg-color:rgb(40 40 43);
     --progressBar-blend-color:rgb(20 68 133);
     --scrollbar-color:rgb(121 121 123);
-    --scrollbar-bg-color:rgb(35 35 39);
+    --scrollbar-bg-color:rgb(248, 248, 248);
     --toolbar-icon-bg-color:rgb(255 255 255);
     --toolbar-icon-hover-bg-color:rgb(255 255 255);
 

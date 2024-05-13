@@ -4,19 +4,31 @@
 //! cargo run -p example-static-file-server
 //! ```
 
-use axum::{
-    extract::Request, handler::HandlerWithoutStateExt, http::StatusCode, routing::get, Router,
-};
+use axum::{routing::get, Router, Extension};
 use std::net::SocketAddr;
-use tower::ServiceExt;
+use std::sync::Arc;
+use axum::response::Html;
 use tower_http::{
-    services::{ServeDir, ServeFile},
+    services::{ServeDir},
     trace::TraceLayer,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tera::
+{
+    Tera, Context,
+};
+
 
 #[tokio::main]
 async fn main() {
+    let tera = match Tera::new("templates/**/*.html") {
+        Ok(t) => t,
+        Err(e) => {
+            println!("Parsing error(s): {}", e);
+            ::std::process::exit(1);
+        }
+    };
+    let shared_tera = Arc::new(tera);
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -26,85 +38,32 @@ async fn main() {
         .init();
 
     tokio::join!(
-        serve(using_serve_dir(), 3001),
-        serve(using_serve_dir_with_assets_fallback(), 3002),
-        serve(using_serve_dir_only_from_root_via_fallback(), 3003),
-        serve(using_serve_dir_with_handler_as_service(), 3004),
-        serve(two_serve_dirs(), 3005),
-        serve(calling_serve_dir_from_a_handler(), 3006),
-        serve(using_serve_file_from_a_route(), 3307),
+        serve(using_serve_dir(shared_tera.clone()), 3001)
     );
 }
 
-fn using_serve_dir() -> Router {
+async fn handle_request(Extension(tera): Extension<Arc<Tera>>,
+                        axum::extract::Path(my_url_id): axum::extract::Path<String>,
+) -> Html<String> {
+    let mut context = Context::new();
+    context.insert("myID", &my_url_id);
+    Html(tera.render("index.html", &context).expect("Failed to render template"))
+}
+
+async fn handle_htmx(Extension(tera): Extension<Arc<Tera>>,
+) -> Html<String> {
+    let context = Context::new();
+    Html(tera.render("viewer_fragment.html", &context).expect("Failed to render template"))
+}
+
+fn using_serve_dir(tera: Arc<Tera>) -> Router {
     // serve the file in the "public" directory under `/public`
-    Router::new().nest_service("/", ServeDir::new("public"))
+    Router::new()
         .nest_service("/pdf_api", ServeDir::new("pdf_api"))
-}
-
-fn using_serve_dir_with_assets_fallback() -> Router {
-    // `ServeDir` allows setting a fallback if an asset is not found
-    // so with this `GET /public/doesnt-exist.jpg` will return `index.html`
-    // rather than a 404
-    let serve_dir = ServeDir::new("../public").not_found_service(ServeFile::new("public/index.html"));
-
-    Router::new()
-        .route("/foo", get(|| async { "Hi from /foo" }))
-        .nest_service("/public", serve_dir.clone())
-        .fallback_service(serve_dir)
-}
-
-fn using_serve_dir_only_from_root_via_fallback() -> Router {
-    // you can also serve the public directly from the root (not nested under `/public`)
-    // by only setting a `ServeDir` as the fallback
-    let serve_dir = ServeDir::new("../public").not_found_service(ServeFile::new("public/index.html"));
-
-    Router::new()
-        .route("/foo", get(|| async { "Hi from /foo" }))
-        .fallback_service(serve_dir)
-}
-
-fn using_serve_dir_with_handler_as_service() -> Router {
-    async fn handle_404() -> (StatusCode, &'static str) {
-        (StatusCode::NOT_FOUND, "Not found")
-    }
-
-    // you can convert handler function to service
-    let service = handle_404.into_service();
-
-    let serve_dir = ServeDir::new("../public").not_found_service(service);
-
-    Router::new()
-        .route("/foo", get(|| async { "Hi from /foo" }))
-        .fallback_service(serve_dir)
-}
-
-fn two_serve_dirs() -> Router {
-    // you can also have two `ServeDir`s nested at different paths
-    let serve_dir_from_assets = ServeDir::new("public");
-    let serve_dir_from_dist = ServeDir::new("dist");
-
-    Router::new()
-        .nest_service("/public", serve_dir_from_assets)
-        .nest_service("/dist", serve_dir_from_dist)
-}
-
-#[allow(clippy::let_and_return)]
-fn calling_serve_dir_from_a_handler() -> Router {
-    // via `tower::Service::call`, or more conveniently `tower::ServiceExt::oneshot` you can
-    // call `ServeDir` yourself from a handler
-    Router::new().nest_service(
-        "/foo",
-        get(|request: Request| async {
-            let service = ServeDir::new("public");
-            let result = service.oneshot(request).await;
-            result
-        }),
-    )
-}
-
-fn using_serve_file_from_a_route() -> Router {
-    Router::new().route_service("/foo", ServeFile::new("public/web/index.html"))
+        .nest_service("/pdf_files", ServeDir::new("public") )
+        .route("/pdf/:my_url_id", get(handle_request))
+        .route("/pdf_viewer", get(handle_htmx))
+        .layer(Extension(tera))
 }
 
 async fn serve(app: Router, port: u16) {

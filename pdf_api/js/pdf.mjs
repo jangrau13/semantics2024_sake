@@ -2903,7 +2903,7 @@ function getDocument(src) {
   }
   const fetchDocParams = {
     docId,
-    apiVersion: "4.2.57",
+    apiVersion: "4.2.58",
     data,
     password,
     disableAutoFetch,
@@ -4767,8 +4767,8 @@ class InternalRenderTask {
     }
   }
 }
-const version = "4.2.57";
-const build = "a8e02953e";
+const version = "4.2.58";
+const build = "63de9c0e8";
 
 __webpack_async_result__();
 } catch(e) { __webpack_async_result__(e); } });
@@ -9484,8 +9484,6 @@ class HighlightEditor extends editor_editor.AnnotationEditor {
       this.#colorPicker = new color_picker.ColorPicker({
         editor: this
       });
-      toolbar.addColorPicker(this.#colorPicker);
-      toolbar.addJanEditorTool();
       toolbar.addJanEditorTool();
     }
     return toolbar;
@@ -11743,8 +11741,6 @@ class ColorPicker {
   #getDropdownRoot() {
     const div = document.createElement("div");
     div.addEventListener("contextmenu", _display_utils_js__WEBPACK_IMPORTED_MODULE_2__.noContextMenu);
-    div.className = "dropdown";
-    div.role = "listbox";
     div.setAttribute("aria-multiselectable", false);
     div.setAttribute("aria-orientation", "vertical");
     div.setAttribute("data-l10n-id", "pdfjs-editor-colorpicker-dropdown");
@@ -11757,8 +11753,8 @@ class ColorPicker {
       button.setAttribute("data-l10n-id", `pdfjs-editor-colorpicker-${name}`);
       const swatch = document.createElement("span");
       button.append(swatch);
-      swatch.className = "swatch";
       swatch.style.backgroundColor = color;
+      swatch.textContent = name;
       button.setAttribute("aria-selected", color === this.#defaultColor);
       button.addEventListener("click", this.#colorSelect.bind(this, color));
       div.append(button);
@@ -11768,6 +11764,10 @@ class ColorPicker {
   }
   #colorSelect(color, event) {
     event.stopPropagation();
+    console.log("recipe for changing color");
+    console.log("source", this);
+    console.log("type", this.#type);
+    console.log("value", color);
     this.#eventBus.dispatch("switchannotationeditorparams", {
       source: this,
       type: this.#type,
@@ -13908,6 +13908,7 @@ class EditorToolbar {
       }
     });
     this.#buttons.append(button);
+    this.#buttons.prepend(button, this.#divider);
   }
   remove() {
     this.#toolbar.remove();
@@ -14014,6 +14015,10 @@ class HighlightToolbar {
           selection.addRange(selectedRange);
         }
         this.#uiManager.highlightSelection("floating_button");
+        this.#uiManager._eventBus.dispatch("switchannotationeditormode", {
+          source: this,
+          mode: 0
+        });
         dialog.removeEventListener('close', this);
       }, {
         once: true
@@ -18467,8 +18472,8 @@ _display_api_js__WEBPACK_IMPORTED_MODULE_1__ = (__webpack_async_dependencies__.t
 
 
 
-const pdfjsVersion = "4.2.57";
-const pdfjsBuild = "a8e02953e";
+const pdfjsVersion = "4.2.58";
+const pdfjsBuild = "63de9c0e8";
 
 __webpack_async_result__();
 } catch(e) { __webpack_async_result__(e); } });
