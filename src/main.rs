@@ -38,7 +38,7 @@ async fn main() {
         .init();
 
     tokio::join!(
-        serve(using_serve_dir(shared_tera.clone()), 3001)
+        serve(using_serve_dir(shared_tera.clone()), 8000)
     );
 }
 

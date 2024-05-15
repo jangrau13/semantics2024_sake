@@ -49506,6 +49506,37 @@ class AnnotationFactory {
     return Promise.all(promises);
   }
 }
+function createHTMLStringFromObject(obj) {
+  if (!obj || typeof obj !== 'object') return '';
+  let htmlString = `<${obj.tagName.toLowerCase()}`;
+  let wiser_content = null;
+  if (obj.attributes) {
+    for (let attr in obj.attributes) {
+      if (attr !== "id") {
+        htmlString += ` ${attr}="${obj.attributes[attr]}"`;
+      }
+      if (attr === "data-wiser-content") {
+        wiser_content = obj.attributes[attr];
+      }
+      if (attr === "data-wiser-id") {
+        htmlString += ` id="${obj.attributes[attr]}"`;
+      }
+    }
+  }
+  htmlString += '>';
+  if (obj.content) {
+    htmlString += obj.content;
+  } else if (wiser_content) {
+    htmlString += wiser_content;
+  }
+  if (obj.children && Array.isArray(obj.children)) {
+    obj.children.forEach(childObj => {
+      htmlString += createHTMLStringFromObject(childObj);
+    });
+  }
+  htmlString += `</${obj.tagName.toLowerCase()}>`;
+  return htmlString;
+}
 function getRgbColor(color, defaultColor = new Uint8ClampedArray(3)) {
   if (!Array.isArray(color)) {
     return defaultColor;
@@ -52268,15 +52299,16 @@ class HighlightAnnotation extends MarkupAnnotation {
     if (marks_on_page) {
       closestMark = wiserFindClosestMark(marks_on_page, annotation);
     }
-    const baseURI = "http://purl.org/wiser#myPDF";
-    const innerText = closestMark.content;
-    highlight.set("Contents", `
-    <div vocab="http://purl.org/dc/terms/" resource="${baseURI}">
-      <p>Excerpt: <span property="description">${innerText}</span></p>
-      <p>Date: <span property="date">${new Date().toISOString().slice(0, 10)}</span></p>
-    </div>
-  `);
-    console.log("Contents Set with RDFA Data");
+    if (closestMark) {
+      const rdfa = closestMark.children.filter(child => {
+        const attributes = child.attributes;
+        return attributes["class"] === "rdfa-content";
+      })[0];
+      const htmlString = createHTMLStringFromObject(rdfa);
+      if (htmlString) {
+        highlight.set("Contents", htmlString);
+      }
+    }
     highlight.set("C", Array.from(color, c => c / 255));
     highlight.set("CA", opacity);
     if (user) {
@@ -55499,7 +55531,7 @@ class WorkerMessageHandler {
       docId,
       apiVersion
     } = docParams;
-    const workerVersion = "4.2.58";
+    const workerVersion = "4.2.59";
     if (apiVersion !== workerVersion) {
       throw new Error(`The API version "${apiVersion}" does not match ` + `the Worker version "${workerVersion}".`);
     }
@@ -56069,8 +56101,8 @@ if (typeof window === "undefined" && !isNodeJS && typeof self !== "undefined" &&
 
 ;// CONCATENATED MODULE: ./src/pdf.worker.js
 
-const pdfjsVersion = "4.2.58";
-const pdfjsBuild = "63de9c0e8";
+const pdfjsVersion = "4.2.59";
+const pdfjsBuild = "f932f780b";
 
 var __webpack_exports__WorkerMessageHandler = __webpack_exports__.WorkerMessageHandler;
 export { __webpack_exports__WorkerMessageHandler as WorkerMessageHandler };

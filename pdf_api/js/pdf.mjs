@@ -2903,7 +2903,7 @@ function getDocument(src) {
   }
   const fetchDocParams = {
     docId,
-    apiVersion: "4.2.58",
+    apiVersion: "4.2.59",
     data,
     password,
     disableAutoFetch,
@@ -4767,8 +4767,8 @@ class InternalRenderTask {
     }
   }
 }
-const version = "4.2.58";
-const build = "63de9c0e8";
+const version = "4.2.59";
+const build = "f932f780b";
 
 __webpack_async_result__();
 } catch(e) { __webpack_async_result__(e); } });
@@ -9640,8 +9640,8 @@ class HighlightEditor extends editor_editor.AnnotationEditor {
     if (this.#rdfa_content) {
       const innerRdfa = document.createElement("div");
       innerRdfa.setAttribute("id", "rdfa-" + this.#id);
-      innerRdfa.setAttribute("property", "http://purl.org/dc/terms/title");
-      innerRdfa.innerText = this.#rdfa_content;
+      innerRdfa.setAttribute("class", "rdfa-content");
+      innerRdfa.innerHTML = this.#rdfa_content;
       innerRdfa.style.display = "none";
       div.appendChild(innerRdfa);
     }
@@ -12039,8 +12039,8 @@ class AltText {
   }
 }
 
-// EXTERNAL MODULE: ./src/display/editor/toolbar.js
-var toolbar = __webpack_require__(362);
+// EXTERNAL MODULE: ./src/display/editor/toolbar.js + 2 modules
+var toolbar = __webpack_require__(26);
 ;// CONCATENATED MODULE: ./src/display/editor/editor.js
 
 
@@ -12266,7 +12266,6 @@ class AnnotationEditor {
     this.addToAnnotationStorage();
   }
   addToAnnotationStorage() {
-    console.log("I adding something to the Annotation Storage", this);
     this._uiManager.addToAnnotationStorage(this);
   }
   setAt(x, y, tx, ty) {
@@ -13786,14 +13785,97 @@ class FreeHighlightOutline extends Outline {
 
 /***/ }),
 
-/***/ 362:
+/***/ 26:
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
-/* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   EditorToolbar: () => (/* binding */ EditorToolbar),
-/* harmony export */   HighlightToolbar: () => (/* binding */ HighlightToolbar)
-/* harmony export */ });
-/* harmony import */ var _display_utils_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(419);
+
+// EXPORTS
+__webpack_require__.d(__webpack_exports__, {
+  EditorToolbar: () => (/* binding */ EditorToolbar),
+  HighlightToolbar: () => (/* binding */ HighlightToolbar)
+});
+
+// EXTERNAL MODULE: ./src/display/display_utils.js
+var display_utils = __webpack_require__(419);
+;// CONCATENATED MODULE: ./web/rdfa/RDFaBuilder.js
+class RDFaBuilder {
+  constructor() {
+    this.elements = [];
+  }
+  addElement(element) {
+    this.elements.push(element);
+    return this;
+  }
+  build() {
+    return this.elements.map(element => element.build()).join('');
+  }
+}
+;// CONCATENATED MODULE: ./web/rdfa/RDFaElement.js
+class RDFaElement {
+  constructor(tagName = 'div') {
+    this.tagName = tagName;
+    this.attributes = {};
+    this.children = [];
+    this.textContent = '';
+  }
+  setId(value) {
+    this.setAttribute('id', value);
+    this.setAttribute('data-wiser-id', value);
+    return this;
+  }
+  setProperty(value) {
+    this.setAttribute('property', value);
+    return this;
+  }
+  setTextContent(value) {
+    this.textContent = value;
+    this.setAttribute('data-wiser-content', value);
+    return this;
+  }
+  setResource(value) {
+    this.setAttribute('resource', value);
+    return this;
+  }
+  setTypeof(value) {
+    this.setAttribute('typeof', value);
+    return this;
+  }
+  setVocab(value) {
+    this.setAttribute('vocab', value);
+    return this;
+  }
+  setHref(value) {
+    this.setAttribute('href', value);
+    return this;
+  }
+  setAttribute(name, value) {
+    this.attributes[name] = value;
+    return this;
+  }
+  addChild(child) {
+    this.children.push(child);
+    return this;
+  }
+  build() {
+    const escapeHtml = str => String(str).replace(/[&<>"']/g, match => {
+      const escape = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      };
+      return escape[match];
+    });
+    const attributesString = Object.entries(this.attributes).map(([key, value]) => `${key}="${escapeHtml(value)}"`).join(' ');
+    const childrenHtml = this.children.map(child => child.build()).join('');
+    const escapedTextContent = escapeHtml(this.textContent);
+    return `<${this.tagName} ${attributesString}>${escapedTextContent}${childrenHtml}</${this.tagName}>`;
+  }
+}
+;// CONCATENATED MODULE: ./src/display/editor/toolbar.js
+
+
 
 class EditorToolbar {
   #toolbar = null;
@@ -13807,7 +13889,7 @@ class EditorToolbar {
     const editToolbar = this.#toolbar = document.createElement("div");
     editToolbar.className = "editToolbar";
     editToolbar.setAttribute("role", "toolbar");
-    editToolbar.addEventListener("contextmenu", _display_utils_js__WEBPACK_IMPORTED_MODULE_0__.noContextMenu);
+    editToolbar.addEventListener("contextmenu", display_utils.noContextMenu);
     editToolbar.addEventListener("pointerdown", EditorToolbar.#pointerDown);
     const buttons = this.#buttons = document.createElement("div");
     buttons.className = "buttons";
@@ -13844,7 +13926,7 @@ class EditorToolbar {
     element.addEventListener("focusout", this.#focusOut.bind(this), {
       capture: true
     });
-    element.addEventListener("contextmenu", _display_utils_js__WEBPACK_IMPORTED_MODULE_0__.noContextMenu);
+    element.addEventListener("contextmenu", display_utils.noContextMenu);
   }
   hide() {
     this.#toolbar.classList.add("hidden");
@@ -13927,7 +14009,7 @@ class HighlightToolbar {
     const editToolbar = this.#toolbar = document.createElement("div");
     editToolbar.className = "editToolbar";
     editToolbar.setAttribute("role", "toolbar");
-    editToolbar.addEventListener("contextmenu", _display_utils_js__WEBPACK_IMPORTED_MODULE_0__.noContextMenu);
+    editToolbar.addEventListener("contextmenu", display_utils.noContextMenu);
     const buttons = this.#buttons = document.createElement("div");
     buttons.className = "buttons";
     editToolbar.append(buttons);
@@ -13979,53 +14061,96 @@ class HighlightToolbar {
     button.append(span);
     span.className = "visuallyHidden";
     span.setAttribute("data-l10n-id", "pdfjs-highlight-floating-button-label");
-    button.addEventListener("contextmenu", _display_utils_js__WEBPACK_IMPORTED_MODULE_0__.noContextMenu);
-    const dialog = document.createElement("dialog");
-    dialog.setAttribute("id", "userInputDialog");
-    dialog.style.width = '300px';
-    dialog.style.border = '1px solid #ccc';
-    dialog.style.borderRadius = '10px';
-    dialog.style.padding = '20px';
-    dialog.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
-    dialog.style.backgroundColor = '#fff';
-    dialog.innerHTML = `
-        <form method="dialog">
-            <h1 style="margin-bottom: 20px; color: black;" data-l10n-id="pdfjs-editor-janTester-title">Knowledge Annotator</h1>
-            <label for="input" style="display: block; margin-bottom: 10px; color: black;" data-l10n-id="pdfjs-editor-janTester-label">Please give me your knowledge:</label>
-            <input type="text" id="input" name="userinput" style="width: 100%; margin-bottom: 20px;">
-            <menu style="display: flex; justify-content: space-between;">
-                <button value="cancel" style="flex: 1; margin-right: 10px;">Cancel</button>
-                <button id="confirmBtn" value="default" style="flex: 1;">OK</button>
-            </menu>
-        </form>`;
-    document.body.appendChild(dialog);
-    button.addEventListener("click", () => {
+    button.addEventListener("contextmenu", display_utils.noContextMenu);
+    const myHide = () => this.hide();
+    button.addEventListener("click", async () => {
       const selection = window.getSelection();
       const selectedRange = selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
-      dialog.showModal();
-      dialog.addEventListener('close', () => {
-        const userInput = document.getElementById("input").value ? document.getElementById("input").value : null;
-        console.log("User input: ", userInput);
-        if (userInput !== null) {
-          document.getElementById('rdfa-tmp-storage').setAttribute('data-user-input', userInput);
-          document.getElementById("input").value = "";
-        }
-        if (selectedRange) {
-          if (selection.rangeCount > 0) selection.removeAllRanges();
-          selection.addRange(selectedRange);
-        }
-        this.#uiManager.highlightSelection("floating_button");
-        this.#uiManager._eventBus.dispatch("switchannotationeditormode", {
-          source: this,
-          mode: 0
-        });
-        dialog.removeEventListener('close', this);
-      }, {
-        once: true
-      });
+      const uiManager = this.#uiManager;
+      const myFreshModal = await setupModal(selectedRange, selection, uiManager, myHide);
+      window.wiserEventBus.emit('showModal', myFreshModal);
     });
     this.#buttons.append(button);
   }
+}
+async function setupModal(selectedRange, selection, uiManager, myHide) {
+  let shortname = '';
+  return {
+    async render(myWorker) {
+      const magicWord = 'magic_onSave_' + new Date().toISOString();
+      const current_concept = document.getElementById("current-concept-holder").getAttribute("data-current-concept");
+      const renderURL = 'https://wiser-atomic.tunnelto.dev/collections/ontology/concept/class/' + current_concept;
+      myWorker.postMessage({
+        type: 'ping',
+        magic: magicWord,
+        url: renderURL
+      });
+      const reactionPromise = new Promise(resolve => {
+        const reaction = msg => {
+          shortname = msg.content;
+          window.wiserEventBus.off(magicWord, reaction);
+          const container = document.createElement('div');
+          container.className = "wiserModal";
+          const title = document.createElement('h2');
+          title.textContent = msg.content;
+          title.className = 'title';
+          container.appendChild(title);
+          const prompt = document.createElement('p');
+          prompt.textContent = 'Would you like to add information to the concept?';
+          prompt.className = 'textInfo';
+          container.appendChild(prompt);
+          const inputField = document.createElement('textarea');
+          inputField.id = 'userInput';
+          inputField.placeholder = 'Enter additional information here';
+          inputField.className = 'inputField';
+          container.appendChild(inputField);
+          const dropdown = document.createElement('select');
+          dropdown.id = 'userDropdown';
+          dropdown.className = 'dropdown';
+          const options = ['Option 1', 'Option 2', 'Option 3', 'Option 4'];
+          options.forEach(optionText => {
+            const option = document.createElement('option');
+            option.value = optionText;
+            option.textContent = optionText;
+            dropdown.appendChild(option);
+          });
+          container.appendChild(dropdown);
+          resolve(container.outerHTML);
+        };
+        window.wiserEventBus.on(magicWord, reaction);
+      });
+      return await reactionPromise;
+    },
+    async onSave(myWorker) {
+      const magicWord = 'magic_onSave_' + new Date().toISOString();
+      const userInput = document.getElementById('userInput').value;
+      const userSelection = document.getElementById('userDropdown').value;
+      const rdfaBuilder = new RDFaBuilder();
+      const container = new RDFaElement('div').setId(shortname).setVocab('http://schema.org/').setTypeof('Annotation');
+      const nameSpan = new RDFaElement('span').setAttribute('property', userInput).setTextContent(shortname);
+      const textDiv = new RDFaElement('div').setProperty('text').setTextContent(userSelection);
+      container.addChild(nameSpan).addChild(textDiv);
+      rdfaBuilder.addElement(container);
+      const builtHtml = rdfaBuilder.build();
+      document.getElementById('rdfa-tmp-storage').setAttribute('data-user-input', builtHtml);
+      if (selectedRange) {
+        if (selection.rangeCount > 0) selection.removeAllRanges();
+        selection.addRange(selectedRange);
+      }
+      uiManager.highlightSelection("floating_button");
+      uiManager._eventBus.dispatch("switchannotationeditormode", {
+        source: this,
+        mode: 0
+      });
+    },
+    onClose() {
+      uiManager._eventBus.dispatch("switchannotationeditormode", {
+        source: this,
+        mode: 0
+      });
+      myHide();
+    }
+  };
 }
 
 
@@ -14044,7 +14169,7 @@ class HighlightToolbar {
 /* unused harmony export CommandManager */
 /* harmony import */ var _shared_util_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(292);
 /* harmony import */ var _display_utils_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(419);
-/* harmony import */ var _toolbar_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(362);
+/* harmony import */ var _toolbar_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(26);
 
 
 
@@ -18472,8 +18597,8 @@ _display_api_js__WEBPACK_IMPORTED_MODULE_1__ = (__webpack_async_dependencies__.t
 
 
 
-const pdfjsVersion = "4.2.58";
-const pdfjsBuild = "63de9c0e8";
+const pdfjsVersion = "4.2.59";
+const pdfjsBuild = "f932f780b";
 
 __webpack_async_result__();
 } catch(e) { __webpack_async_result__(e); } });

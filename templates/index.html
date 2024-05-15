@@ -52,7 +52,7 @@
 
         .mySidebar h2,
         .mySidebar .button-container {
-            border-bottom: 1px solid #00CF95; /* Light underline for the header for some visual separation */
+            border-bottom: 1px solid lightgray; /* Light underline for the header for some visual separation */
             padding-bottom: 10px; /* Space below the text */
             margin-bottom: 20px; /* Space below the underline */
         }
@@ -61,8 +61,8 @@
             flex-grow: 1; /* Takes remaining horizontal space */
             background-color: #f8f8f8;
             color: #00CF95;
-            border-color: #00CF95;
-            border-style: ridge;
+            border-color: lightgray;
+            border-style: solid;
             border-radius: 10px;
             padding: 10px;
             margin: 10px; /* Space between sections */
@@ -73,7 +73,7 @@
         .mySidebar button, .mySidebar input, .mySidebar select {
             background-color: #f8f8f8; /* Light, complementary color for buttons and inputs */
             color: #00CF95; /* Dark color for text for readability */
-            border: 2px solid #00CF95;
+            border: 2px solid lightgray;
             padding: 8px 16px; /* Padding inside buttons */
             margin: 5px; /* Margin around buttons */
             border-radius: 5px; /* Rounded corners */
@@ -92,10 +92,83 @@
         .pdf_utils {
             display: none;
         }
-
-        .pdf_open {
-            display: block;
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.5);
+            color: #00CF95;
+            font-family: Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
         }
+        .modal-content {
+            background: white;
+            padding: 20px;
+            border: 2px solid lightgray;
+            border-radius: 10px;
+            position: relative;
+        }
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+        }
+        .modal-footer button {
+            background-color: #00CF95;
+            color: white;
+            border: 1px solid lightgray;
+            border-radius: 5px;
+            margin-left: 10px;
+            margin-top: 10px;
+            padding: 5px;
+        }
+
+        .wiserModal {
+            display: grid;
+            border-radius: 10px;
+            justify-content: center;
+
+        }
+
+        .wiserModal .title {
+            font-weight: bold;
+            font-family: Arial, sans-serif;
+            border-bottom: 1px solid #00CF95;
+            padding: 5px;
+            margin: 5px;
+        }
+
+        .wiserModal .textInfo {
+            padding: 5px;
+            margin: 5px;
+        }
+
+        .wiserModal .inputField {
+            border-radius: 5px;
+            height: 3vw; /* Span multiple lines */
+            border: 1px solid #ddd;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            padding: 5px;
+            margin: 10px;
+        }
+
+        .wiserModal .dropdown {
+            border-radius: 5px;
+            display: block;
+            background: #00CF95;
+            color: white;
+            border: 1px solid white;
+            padding: 5px;
+            margin: 10px;
+        }
+
     </style>
 </head>
 <body>
@@ -103,7 +176,9 @@
     <h1>My PDF Annotator</h1>
     <div id="myPDFTitle"></div>
     <div id="pageCountField"></div>
+    <div id="current-concept-holder" data-current-concept="generic"></div>
     <div id="pdf_id" data-id="{{myID}}"></div>
+    <div id="modal-root"></div>
 </div>
 <div id="content-container">
     <div class="mySidebar" id="left-sidebar">
@@ -265,9 +340,6 @@
     <div class="mySidebar" id="right-sidebar">
         <h2>Annotate</h2>
         <div class="button-container pdf_utils">
-            <button onclick="dispatchPDFEvent('#998833')">Concept 1</button>
-            <button onclick="dispatchPDFEvent('#FF5733')">Concept 2</button>
-            <button onclick="dispatchPDFEvent('#357ABD')">Concept 3</button>
         </div>
     </div>
 </div>
@@ -299,6 +371,7 @@
     }
 
     checkViewer();
+
 </script>
 </body>
 </html>

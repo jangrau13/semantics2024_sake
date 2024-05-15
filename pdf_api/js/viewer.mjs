@@ -15010,6 +15010,33 @@ class DOMLocalization extends Localization {
 
 /***/ }),
 
+/***/ 7914:
+/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
+
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+const WiserEventBus = {
+  events: {},
+  on(event, listener) {
+    if (!this.events[event]) {
+      this.events[event] = [];
+    }
+    this.events[event].push(listener);
+  },
+  off(event, listenerToRemove) {
+    if (!this.events[event]) return;
+    this.events[event] = this.events[event].filter(listener => listener !== listenerToRemove);
+  },
+  emit(event, data) {
+    if (!this.events[event]) return;
+    this.events[event].forEach(listener => listener(data));
+  }
+};
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (WiserEventBus);
+
+/***/ }),
+
 /***/ 259:
 /***/ ((__webpack_module__, __webpack_exports__, __webpack_require__) => {
 
@@ -18272,7 +18299,7 @@ const defaultOptions = {
     kind: OptionKind.VIEWER
   };
   defaultOptions.sandboxBundleSrc = {
-    value: "../build/pdf.sandbox.mjs",
+    value: "../js/pdf.sandbox.mjs",
     kind: OptionKind.VIEWER
   };
   defaultOptions.viewerCssTheme = {
@@ -19336,6 +19363,28 @@ class L10n {
 }
 const GenericL10n = null;
 
+
+/***/ }),
+
+/***/ 9399:
+/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
+
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   handleConceptButtons: () => (/* binding */ handleConceptButtons)
+/* harmony export */ });
+async function handleConceptButtons(data) {
+  const buttonContainer = document.querySelector('.button-container.pdf_utils');
+  if (buttonContainer) {
+    data.buttons.forEach(button => {
+      const tempContainer = document.createElement('div');
+      tempContainer.innerHTML = button.trim();
+      const btn = tempContainer.firstChild;
+      buttonContainer.appendChild(btn);
+    });
+  } else {
+    console.error("Button container not found");
+  }
+}
 
 /***/ }),
 
@@ -25143,7 +25192,7 @@ class PDFViewer {
   #scaleTimeoutId = null;
   #textLayerMode = _ui_utils_js__WEBPACK_IMPORTED_MODULE_1__.TextLayerMode.ENABLE;
   constructor(options) {
-    const viewerVersion = "4.2.58";
+    const viewerVersion = "4.2.59";
     if (pdfjs_lib__WEBPACK_IMPORTED_MODULE_0__.version !== viewerVersion) {
       throw new Error(`The API version "${pdfjs_lib__WEBPACK_IMPORTED_MODULE_0__.version}" does not match the Viewer version "${viewerVersion}".`);
     }
@@ -27927,7 +27976,6 @@ class Toolbar {
     }) => {
       switch (mode) {
         case pdfjs_lib__WEBPACK_IMPORTED_MODULE_0__.AnnotationEditorType.HIGHLIGHT:
-          console.log("I get triggered as soon as the icon that appears after a highlight has been done");
           options.editorHighlightButton.click();
           break;
       }
@@ -28721,7 +28769,9 @@ __webpack_require__.a(__webpack_module__, async (__webpack_handle_async_dependen
 /* harmony import */ var _app_options_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(9840);
 /* harmony import */ var _pdf_link_service_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(787);
 /* harmony import */ var _app_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(1621);
-/* harmony import */ var rdfa_streaming_parser__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(3924);
+/* harmony import */ var rdfa_streaming_parser__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(3924);
+/* harmony import */ var _WiserEventBus_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(7914);
+/* harmony import */ var _modals_workerHandler_js__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(9399);
 var __webpack_async_dependencies__ = __webpack_handle_async_dependencies__([_app_js__WEBPACK_IMPORTED_MODULE_3__]);
 _app_js__WEBPACK_IMPORTED_MODULE_3__ = (__webpack_async_dependencies__.then ? (await __webpack_async_dependencies__)() : __webpack_async_dependencies__)[0];
 
@@ -28729,8 +28779,10 @@ _app_js__WEBPACK_IMPORTED_MODULE_3__ = (__webpack_async_dependencies__.then ? (a
 
 
 
-const pdfjsVersion = "4.2.58";
-const pdfjsBuild = "63de9c0e8";
+
+
+const pdfjsVersion = "4.2.59";
+const pdfjsBuild = "f932f780b";
 const AppConstants = {
   LinkTarget: _pdf_link_service_js__WEBPACK_IMPORTED_MODULE_2__.LinkTarget,
   RenderingStates: _ui_utils_js__WEBPACK_IMPORTED_MODULE_0__.RenderingStates,
@@ -28886,7 +28938,8 @@ function webViewerLoad() {
 }
 document.blockUnblockOnload?.(true);
 if (document.readyState === "interactive" || document.readyState === "complete") {
-  const myParser = new rdfa_streaming_parser__WEBPACK_IMPORTED_MODULE_4__.RdfaParser({
+  window.WiserEventBus = _WiserEventBus_js__WEBPACK_IMPORTED_MODULE_4__["default"];
+  const myParser = new rdfa_streaming_parser__WEBPACK_IMPORTED_MODULE_5__.RdfaParser({
     baseIRI: window.location.href,
     contentType: "text/html"
   });
@@ -28896,6 +28949,71 @@ if (document.readyState === "interactive" || document.readyState === "complete")
   document.addEventListener("DOMContentLoaded", webViewerLoad, true);
 }
 
+class Modal {
+  constructor() {
+    this.modalRoot = document.getElementById('modal-root');
+    this.initStore().then(success => {
+      _WiserEventBus_js__WEBPACK_IMPORTED_MODULE_4__["default"].on('showModal', this.showModal.bind(this));
+      window.wiserEventBus = _WiserEventBus_js__WEBPACK_IMPORTED_MODULE_4__["default"];
+    });
+  }
+  async initStore() {
+    this.myAtomicWorker = new Worker("/pdf_api/js/atomic.worker.js");
+    this.myAtomicWorker.onmessage = async e => {
+      switch (e.data.type) {
+        case "pong":
+          const magicWord = e.data.magic;
+          const content = e.data.content;
+          _WiserEventBus_js__WEBPACK_IMPORTED_MODULE_4__["default"].emit(magicWord, {
+            content
+          });
+          break;
+        case "conceptButtons":
+          await (0,_modals_workerHandler_js__WEBPACK_IMPORTED_MODULE_6__.handleConceptButtons)(e.data);
+          break;
+        default:
+          console.log("not yet implemented type", e);
+      }
+    };
+    this.myAtomicWorker.postMessage({
+      type: 'getConcepts',
+      user: 'potentialUser'
+    });
+  }
+  async showModal(modal) {
+    this.clearModal();
+    const modalOverlay = document.createElement('div');
+    modalOverlay.className = 'modal-overlay';
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-content';
+    modalOverlay.appendChild(modalContent);
+    const content = document.createElement('div');
+    content.innerHTML = await modal.render(this.myAtomicWorker);
+    modalContent.appendChild(content);
+    const footer = document.createElement('div');
+    footer.className = 'modal-footer';
+    const saveButton = document.createElement('button');
+    saveButton.textContent = 'Save';
+    saveButton.addEventListener('click', async () => {
+      await modal.onSave(this.myAtomicWorker);
+      this.clearModal();
+    });
+    const closeButton = document.createElement('button');
+    closeButton.textContent = 'Close';
+    closeButton.addEventListener('click', async () => {
+      await modal.onClose();
+      this.clearModal();
+    });
+    footer.appendChild(saveButton);
+    footer.appendChild(closeButton);
+    modalContent.appendChild(footer);
+    this.modalRoot.appendChild(modalOverlay);
+  }
+  clearModal() {
+    this.modalRoot.innerHTML = '';
+  }
+}
+new Modal();
 __webpack_async_result__();
 } catch(e) { __webpack_async_result__(e); } });
 
