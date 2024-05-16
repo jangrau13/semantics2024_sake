@@ -332,7 +332,12 @@
 
                 <button data-l10n-id="pdfjs-save-button" id="download" tabindex="42"
                         title="Download">
-                    <span data-l10n-id="pdfjs-save-button-label">Download PDF</span>
+                    <span data-l10n-id="pdfjs-save-button-label">Save PDF</span>
+                </button>
+                <button id="saveKnowledge"
+                        onclick="downloadKnowledge()"
+                        title="saveKnowledge">
+                    <span >Download Knowledge</span>
                 </button>
             </div>
         </div>
@@ -383,6 +388,15 @@
     }
 
     checkViewer();
+
+    function downloadKnowledge(){
+        window.wiserEventBus.emit('downloadKnowledge', {
+            please: 'now'
+        });
+        window.wiserEventBus.on('knowledgeConfirmation', (msg) => {
+            console.log("handle knowledge confirmation", msg)
+        })
+    }
 
 </script>
 </body>

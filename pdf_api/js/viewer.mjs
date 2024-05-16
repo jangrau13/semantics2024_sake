@@ -25213,7 +25213,7 @@ class PDFViewer {
   #scaleTimeoutId = null;
   #textLayerMode = _ui_utils_js__WEBPACK_IMPORTED_MODULE_1__.TextLayerMode.ENABLE;
   constructor(options) {
-    const viewerVersion = "4.2.60";
+    const viewerVersion = "4.2.61";
     if (pdfjs_lib__WEBPACK_IMPORTED_MODULE_0__.version !== viewerVersion) {
       throw new Error(`The API version "${pdfjs_lib__WEBPACK_IMPORTED_MODULE_0__.version}" does not match the Viewer version "${viewerVersion}".`);
     }
@@ -28802,8 +28802,8 @@ _app_js__WEBPACK_IMPORTED_MODULE_3__ = (__webpack_async_dependencies__.then ? (a
 
 
 
-const pdfjsVersion = "4.2.60";
-const pdfjsBuild = "d240ae6d0";
+const pdfjsVersion = "4.2.61";
+const pdfjsBuild = "5e014fc26";
 const AppConstants = {
   LinkTarget: _pdf_link_service_js__WEBPACK_IMPORTED_MODULE_2__.LinkTarget,
   RenderingStates: _ui_utils_js__WEBPACK_IMPORTED_MODULE_0__.RenderingStates,
@@ -28975,6 +28975,13 @@ class Modal {
     this.modalRoot = document.getElementById('modal-root');
     this.initStore().then(success => {
       _WiserEventBus_js__WEBPACK_IMPORTED_MODULE_4__["default"].on('showModal', this.showModal.bind(this));
+      _WiserEventBus_js__WEBPACK_IMPORTED_MODULE_4__["default"].on('downloadKnowledge', () => {
+        const documentHTML = document.documentElement.outerHTML;
+        this.myAtomicWorker.postMessage({
+          type: 'addKnowledge',
+          document: documentHTML
+        });
+      });
       window.wiserEventBus = _WiserEventBus_js__WEBPACK_IMPORTED_MODULE_4__["default"];
     });
   }
