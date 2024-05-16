@@ -92,6 +92,7 @@
         .pdf_utils {
             display: none;
         }
+
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -106,6 +107,7 @@
             justify-content: center;
             z-index: 9999;
         }
+
         .modal-content {
             background: white;
             padding: 20px;
@@ -113,10 +115,12 @@
             border-radius: 10px;
             position: relative;
         }
+
         .modal-footer {
             display: flex;
             justify-content: flex-end;
         }
+
         .modal-footer button {
             background-color: #00CF95;
             color: white;
@@ -187,8 +191,8 @@
     <h1>My PDF Annotator</h1>
     <div id="myPDFTitle"></div>
     <div id="pageCountField"></div>
-    <div id="current-concept-holder" data-current-concept="comment"></div>
-    <div id="pdf_id" data-id="{{myID}}"></div>
+    <div data-current-concept="comment" id="current-concept-holder"></div>
+    <div data-id="{{myID}}" id="pdf_id"></div>
     <div id="modal-root"></div>
     <div id="popus"></div>
 </div>
@@ -196,6 +200,17 @@
     <div class="mySidebar" id="left-sidebar">
         <h2>Tools</h2>
         <div class="pdf_utils">
+            <div class="button-container">
+                <button data-l10n-id="pdfjs-save-button" id="download" tabindex="42"
+                        title="Download">
+                    <span data-l10n-id="pdfjs-save-button-label">Save PDF</span>
+                </button>
+                <button id="saveKnowledge"
+                        onclick="downloadKnowledge()"
+                        title="saveKnowledge">
+                    <span>Download Knowledge</span>
+                </button>
+            </div>
             <div class="button-container">
                 <div id="scaleSelectContainer">
                     <select data-l10n-id="pdfjs-zoom-select" id="scaleSelect" tabindex="23" title="Zoom">
@@ -328,18 +343,6 @@
                         tabindex="102">Toggle Annotations
                 </button>
             </div>
-            <div class="button-container">
-
-                <button data-l10n-id="pdfjs-save-button" id="download" tabindex="42"
-                        title="Download">
-                    <span data-l10n-id="pdfjs-save-button-label">Save PDF</span>
-                </button>
-                <button id="saveKnowledge"
-                        onclick="downloadKnowledge()"
-                        title="saveKnowledge">
-                    <span >Download Knowledge</span>
-                </button>
-            </div>
         </div>
         <button data-l10n-id="pdfjs-open-button" id="pdf_open" tabindex="43"
                 title="Open">
@@ -389,7 +392,7 @@
 
     checkViewer();
 
-    function downloadKnowledge(){
+    function downloadKnowledge() {
         window.wiserEventBus.emit('downloadKnowledge', {
             please: 'now'
         });
@@ -397,6 +400,27 @@
             console.log("handle knowledge confirmation", msg)
         })
     }
+
+    function checkForStar() {
+        const pdfDiv = document.getElementById('myPDFTitle');
+        const saveButton = document.getElementById('saveKnowledge');
+
+        if (!pdfDiv.textContent.includes('*')) {
+            saveButton.style.display = 'block';
+        } else {
+            saveButton.style.display = 'none';
+        }
+    }
+
+    // Set up a MutationObserver to monitor changes to the pdf_id element
+    const pdfDiv = document.getElementById('myPDFTitle');
+    const observer = new MutationObserver(checkForStar);
+
+    // Configure the observer to watch for changes to the child list and character data of the pdf_id element
+    observer.observe(pdfDiv, { childList: true, subtree: true, characterData: true });
+
+    // Initial check in case the content already contains a star
+    checkForStar();
 
 </script>
 </body>
