@@ -52241,15 +52241,12 @@ class HighlightAnnotation extends MarkupAnnotation {
   constructor(params) {
     super(params);
     this.janParam = params;
-    console.log("creating new Highlight Annotaton");
-    console.log(this.janParam);
     const {
       dict,
       xref
     } = params;
     this.data.annotationType = AnnotationType.HIGHLIGHT;
     const quadPoints = this.data.quadPoints = getQuadPoints(dict, null);
-    console.log("quadPoints", quadPoints);
     if (quadPoints) {
       const resources = this.appearance?.dict.get("Resources");
       if (!this.appearance || !resources?.has("ExtGState")) {
@@ -55531,7 +55528,7 @@ class WorkerMessageHandler {
       docId,
       apiVersion
     } = docParams;
-    const workerVersion = "4.2.59";
+    const workerVersion = "4.2.60";
     if (apiVersion !== workerVersion) {
       throw new Error(`The API version "${apiVersion}" does not match ` + `the Worker version "${workerVersion}".`);
     }
@@ -56101,8 +56098,8 @@ if (typeof window === "undefined" && !isNodeJS && typeof self !== "undefined" &&
 
 ;// CONCATENATED MODULE: ./src/pdf.worker.js
 
-const pdfjsVersion = "4.2.59";
-const pdfjsBuild = "f932f780b";
+const pdfjsVersion = "4.2.60";
+const pdfjsBuild = "d240ae6d0";
 
 var __webpack_exports__WorkerMessageHandler = __webpack_exports__.WorkerMessageHandler;
 export { __webpack_exports__WorkerMessageHandler as WorkerMessageHandler };

@@ -184,7 +184,6 @@
             if (!pdfApp) {
                 console.error('PDFViewerApplication is not available');
             } else {
-                console.log("pdfApp ready", shortname, color);
                 document.getElementById("current-concept-holder").setAttribute("data-current-concept", shortname)
                 pdfApp.eventBus.dispatch("switchannotationeditorparams", {
                     source: this,

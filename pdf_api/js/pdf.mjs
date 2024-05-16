@@ -583,7 +583,24 @@ class AnnotationElement {
       data
     } = this;
     container.setAttribute("aria-haspopup", "dialog");
-    console.log("popup created", container);
+    const newDiv = document.createElement("div");
+    newDiv.innerHTML = data.contentsObj.str;
+    const popupDiv = document.getElementById("popus");
+    popupDiv.appendChild(newDiv);
+    const usefulInfo = newDiv.querySelector('[data-wiser-content]');
+    const typeOfElement = newDiv.querySelector('[data-wiser-type]');
+    let finalContent = null;
+    if (typeOfElement) {
+      const actualType = typeOfElement.getAttribute("data-wiser-type");
+      finalContent = actualType + ": ";
+    }
+    if (usefulInfo) {
+      const dataWiserContent = usefulInfo.getAttribute('data-wiser-content');
+      finalContent += dataWiserContent;
+      data.contentsObj.str = finalContent;
+    } else {
+      data.contentsObj.str = finalContent;
+    }
     const popup = new PopupAnnotationElement({
       data: {
         color: data.color,
@@ -2903,7 +2920,7 @@ function getDocument(src) {
   }
   const fetchDocParams = {
     docId,
-    apiVersion: "4.2.59",
+    apiVersion: "4.2.60",
     data,
     password,
     disableAutoFetch,
@@ -4767,8 +4784,8 @@ class InternalRenderTask {
     }
   }
 }
-const version = "4.2.59";
-const build = "f932f780b";
+const version = "4.2.60";
+const build = "d240ae6d0";
 
 __webpack_async_result__();
 } catch(e) { __webpack_async_result__(e); } });
@@ -13821,6 +13838,7 @@ class RDFaElement {
   setId(value) {
     this.setAttribute('id', value);
     this.setAttribute('data-wiser-id', value);
+    this.setAttribute('resource', '#' + value);
     return this;
   }
   setProperty(value) {
@@ -14074,47 +14092,32 @@ class HighlightToolbar {
   }
 }
 async function setupModal(selectedRange, selection, uiManager, myHide) {
-  let shortname = '';
+  let currentMessage = null;
+  const selectedText = selection.toString();
+  let infoToLookFor = [];
+  let appliedConcept = null;
+  let currentConcept = null;
   return {
     async render(myWorker) {
       const magicWord = 'magic_onSave_' + new Date().toISOString();
       const current_concept = document.getElementById("current-concept-holder").getAttribute("data-current-concept");
       const renderURL = 'https://wiser-atomic.tunnelto.dev/collections/ontology/concept/class/' + current_concept;
+      appliedConcept = renderURL;
       myWorker.postMessage({
-        type: 'ping',
+        type: 'createModal',
         magic: magicWord,
-        url: renderURL
+        url: renderURL,
+        selectedText
       });
       const reactionPromise = new Promise(resolve => {
         const reaction = msg => {
-          shortname = msg.content;
+          currentMessage = msg;
           window.wiserEventBus.off(magicWord, reaction);
+          const myDiv = currentMessage.content;
+          infoToLookFor = currentMessage.infoToLookFor;
           const container = document.createElement('div');
           container.className = "wiserModal";
-          const title = document.createElement('h2');
-          title.textContent = msg.content;
-          title.className = 'title';
-          container.appendChild(title);
-          const prompt = document.createElement('p');
-          prompt.textContent = 'Would you like to add information to the concept?';
-          prompt.className = 'textInfo';
-          container.appendChild(prompt);
-          const inputField = document.createElement('textarea');
-          inputField.id = 'userInput';
-          inputField.placeholder = 'Enter additional information here';
-          inputField.className = 'inputField';
-          container.appendChild(inputField);
-          const dropdown = document.createElement('select');
-          dropdown.id = 'userDropdown';
-          dropdown.className = 'dropdown';
-          const options = ['Option 1', 'Option 2', 'Option 3', 'Option 4'];
-          options.forEach(optionText => {
-            const option = document.createElement('option');
-            option.value = optionText;
-            option.textContent = optionText;
-            dropdown.appendChild(option);
-          });
-          container.appendChild(dropdown);
+          container.innerHTML = myDiv;
           resolve(container.outerHTML);
         };
         window.wiserEventBus.on(magicWord, reaction);
@@ -14122,16 +14125,21 @@ async function setupModal(selectedRange, selection, uiManager, myHide) {
       return await reactionPromise;
     },
     async onSave(myWorker) {
-      const magicWord = 'magic_onSave_' + new Date().toISOString();
-      const userInput = document.getElementById('userInput').value;
-      const userSelection = document.getElementById('userDropdown').value;
+      const current_concept = document.getElementById("current-concept-holder").getAttribute("data-current-concept");
       const rdfaBuilder = new RDFaBuilder();
-      const container = new RDFaElement('div').setId(shortname).setVocab('http://schema.org/').setTypeof('Annotation');
-      const nameSpan = new RDFaElement('span').setAttribute('property', userInput).setTextContent(shortname);
-      const textDiv = new RDFaElement('div').setProperty('text').setTextContent(userSelection);
-      container.addChild(nameSpan).addChild(textDiv);
+      const container = new RDFaElement('div').setVocab('http://schema.org/').setTypeof(appliedConcept).setAttribute('data-wiser-type', current_concept);
+      for (const infoIndex of infoToLookFor) {
+        const importantInfo = document.getElementById(infoIndex);
+        if (infoIndex === "https://wiser-atomic.tunnelto.dev/property/th1piubjse") {
+          container.setId(importantInfo.value);
+        } else {
+          const infoSpan = new RDFaElement('span').setAttribute('property', infoIndex).setTextContent(importantInfo.value);
+          container.addChild(infoSpan);
+        }
+      }
       rdfaBuilder.addElement(container);
       const builtHtml = rdfaBuilder.build();
+      console.log("adding knowledge", builtHtml);
       document.getElementById('rdfa-tmp-storage').setAttribute('data-user-input', builtHtml);
       if (selectedRange) {
         if (selection.rangeCount > 0) selection.removeAllRanges();
@@ -18597,8 +18605,8 @@ _display_api_js__WEBPACK_IMPORTED_MODULE_1__ = (__webpack_async_dependencies__.t
 
 
 
-const pdfjsVersion = "4.2.59";
-const pdfjsBuild = "f932f780b";
+const pdfjsVersion = "4.2.60";
+const pdfjsBuild = "d240ae6d0";
 
 __webpack_async_result__();
 } catch(e) { __webpack_async_result__(e); } });

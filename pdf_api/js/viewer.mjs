@@ -16357,9 +16357,7 @@ const PDFViewerApplication = {
         type: "application/pdf"
       });
       await this.downloadManager.download(blob, url, filename, options);
-    } catch {
-      await this.downloadManager.downloadUrl(url, filename, options);
-    }
+    } catch {}
   },
   async save(options = {}) {
     if (this._saveInProgress) {
@@ -18715,6 +18713,23 @@ function download(blobUrl, filename) {
   a.click();
   a.remove();
 }
+function saveToServer(blob, filename) {
+  console.log(`Saving ${filename} to server...`);
+  const formData = new FormData();
+  formData.append('file', blob, filename);
+  fetch('/api/savepdf', {
+    method: 'POST',
+    body: formData
+  }).then(response => {
+    if (response.ok) {
+      console.log(`File ${filename} saved successfully.`);
+    } else {
+      console.error('Failed to save the file.');
+    }
+  }).catch(error => {
+    console.error('Error saving file:', error);
+  });
+}
 class DownloadManager {
   #openBlobUrls = new WeakMap();
   downloadUrl(url, filename, _options) {
@@ -18759,8 +18774,14 @@ class DownloadManager {
     return false;
   }
   download(blob, url, filename, _options) {
-    const blobUrl = URL.createObjectURL(blob);
-    download(blobUrl, filename);
+    const finalFilename = prompt("Please enter the filename:", filename);
+    const choice = confirm("Do you want to save it to the server? Click 'OK' to save to server, 'Cancel' to download the PDF.");
+    if (choice) {
+      saveToServer(blob, finalFilename);
+    } else {
+      const blobUrl = URL.createObjectURL(blob);
+      download(blobUrl, finalFilename);
+    }
   }
 }
 
@@ -25192,7 +25213,7 @@ class PDFViewer {
   #scaleTimeoutId = null;
   #textLayerMode = _ui_utils_js__WEBPACK_IMPORTED_MODULE_1__.TextLayerMode.ENABLE;
   constructor(options) {
-    const viewerVersion = "4.2.59";
+    const viewerVersion = "4.2.60";
     if (pdfjs_lib__WEBPACK_IMPORTED_MODULE_0__.version !== viewerVersion) {
       throw new Error(`The API version "${pdfjs_lib__WEBPACK_IMPORTED_MODULE_0__.version}" does not match the Viewer version "${viewerVersion}".`);
     }
@@ -28781,8 +28802,8 @@ _app_js__WEBPACK_IMPORTED_MODULE_3__ = (__webpack_async_dependencies__.then ? (a
 
 
 
-const pdfjsVersion = "4.2.59";
-const pdfjsBuild = "f932f780b";
+const pdfjsVersion = "4.2.60";
+const pdfjsBuild = "d240ae6d0";
 const AppConstants = {
   LinkTarget: _pdf_link_service_js__WEBPACK_IMPORTED_MODULE_2__.LinkTarget,
   RenderingStates: _ui_utils_js__WEBPACK_IMPORTED_MODULE_0__.RenderingStates,
@@ -28964,8 +28985,10 @@ class Modal {
         case "pong":
           const magicWord = e.data.magic;
           const content = e.data.content;
+          const infoToLookFor = e.data.infoToLookFor;
           _WiserEventBus_js__WEBPACK_IMPORTED_MODULE_4__["default"].emit(magicWord, {
-            content
+            content,
+            infoToLookFor
           });
           break;
         case "conceptButtons":

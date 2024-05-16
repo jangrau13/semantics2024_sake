@@ -149,6 +149,17 @@
 
         .wiserModal .inputField {
             border-radius: 5px;
+            border: 1px solid #ddd;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            padding: 5px;
+            margin: 10px;
+        }
+
+        .wiserModal .textareaField {
+            border-radius: 5px;
             height: 3vw; /* Span multiple lines */
             border: 1px solid #ddd;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -176,9 +187,10 @@
     <h1>My PDF Annotator</h1>
     <div id="myPDFTitle"></div>
     <div id="pageCountField"></div>
-    <div id="current-concept-holder" data-current-concept="generic"></div>
+    <div id="current-concept-holder" data-current-concept="comment"></div>
     <div id="pdf_id" data-id="{{myID}}"></div>
     <div id="modal-root"></div>
+    <div id="popus"></div>
 </div>
 <div id="content-container">
     <div class="mySidebar" id="left-sidebar">
