@@ -591,7 +591,37 @@ class AnnotationElement {
     const typeOfElement = newDiv.querySelector('[data-wiser-type]');
     let finalContent = null;
     if (typeOfElement) {
+      data.wiser = true;
       const actualType = typeOfElement.getAttribute("data-wiser-type");
+      const resource = typeOfElement.getAttribute("data-wiser-subject");
+      const magicWord = "magic_word_" + new Date().toISOString();
+      window.myAtomicWorker.postMessage({
+        type: 'ping',
+        magic: magicWord,
+        url: resource
+      });
+      const linkHeaderHTML = document.createElement("div");
+      linkHeaderHTML.id = magicWord;
+      const linkHeaderSpan = document.createElement("a");
+      linkHeaderSpan.setAttribute("href", resource);
+      linkHeaderSpan.textContent = "visit me at the KG";
+      linkHeaderHTML.appendChild(linkHeaderSpan);
+      wiserEventBus.on(magicWord, msg => {
+        const startTime = Date.now();
+        let linkHeaderDiv;
+        while (Date.now() - startTime < 2000) {
+          linkHeaderDiv = document.getElementById(magicWord);
+          if (linkHeaderDiv) {
+            break;
+          }
+        }
+        if (!msg.content) {
+          linkHeaderDiv.style.display = 'none';
+        }
+      });
+      if (resource) {
+        data.titleObj.link = linkHeaderHTML;
+      }
       finalContent = actualType + ": ";
     }
     if (usefulInfo) {
@@ -1918,6 +1948,9 @@ class PopupElement {
       dir: title.dir,
       str: title.textContent
     } = this.#titleObj);
+    if (this.#titleObj.link) {
+      title.appendChild(this.#titleObj.link);
+    }
     popup.append(header);
     if (this.#dateObj) {
       const modificationDate = document.createElement("span");
@@ -2313,6 +2346,8 @@ class HighlightAnnotationElement extends AnnotationElement {
       this._createPopup();
     }
     this.container.classList.add("highlightAnnotation");
+    console.log("can I hide this?", this.container);
+    this.container.style.display = 'none';
     return this.container;
   }
 }
@@ -2920,7 +2955,7 @@ function getDocument(src) {
   }
   const fetchDocParams = {
     docId,
-    apiVersion: "4.2.62",
+    apiVersion: "4.2.63",
     data,
     password,
     disableAutoFetch,
@@ -4784,8 +4819,8 @@ class InternalRenderTask {
     }
   }
 }
-const version = "4.2.62";
-const build = "3d902fff7";
+const version = "4.2.63";
+const build = "8601b06ea";
 
 __webpack_async_result__();
 } catch(e) { __webpack_async_result__(e); } });
@@ -8579,6 +8614,7 @@ class DrawLayer {
     this.#mapping.get(id).setAttribute("fill", color);
   }
   changeOpacity(id, opacity) {
+    console.log("draw opacity", opacity);
     this.#mapping.get(id).setAttribute("fill-opacity", opacity);
   }
   addClass(id, className) {
@@ -9267,7 +9303,7 @@ class HighlightEditor extends editor_editor.AnnotationEditor {
   #methodOfCreation = "";
   #rdfa_content = null;
   static _defaultColor = null;
-  static _defaultOpacity = 1;
+  static _defaultOpacity = 0.5;
   static _defaultThickness = 12;
   static _l10nPromise;
   static _type = "highlight";
@@ -9501,7 +9537,6 @@ class HighlightEditor extends editor_editor.AnnotationEditor {
       this.#colorPicker = new color_picker.ColorPicker({
         editor: this
       });
-      toolbar.addJanEditorTool();
     }
     return toolbar;
   }
@@ -14096,7 +14131,7 @@ async function setupModal(selectedRange, selection, uiManager, myHide) {
   const selectedText = selection.toString();
   let infoToLookFor = [];
   let appliedConcept = null;
-  let currentConcept = null;
+  let potentialSubject = null;
   return {
     async render(myWorker) {
       const magicWord = 'magic_onSave_' + new Date().toISOString();
@@ -14115,6 +14150,7 @@ async function setupModal(selectedRange, selection, uiManager, myHide) {
           window.wiserEventBus.off(magicWord, reaction);
           const myDiv = currentMessage.content;
           infoToLookFor = currentMessage.infoToLookFor;
+          potentialSubject = currentMessage.potentialSubject;
           const container = document.createElement('div');
           container.className = "wiserModal";
           container.innerHTML = myDiv;
@@ -14132,6 +14168,7 @@ async function setupModal(selectedRange, selection, uiManager, myHide) {
         const importantInfo = document.getElementById(infoIndex);
         if (infoIndex === "https://wiser-atomic.tunnelto.dev/property/th1piubjse") {
           container.setId(importantInfo.value);
+          container.setAttribute('data-wiser-potential-subject', potentialSubject);
         } else {
           const infoSpan = new RDFaElement('span').setAttribute('property', infoIndex).setTextContent(importantInfo.value);
           container.addChild(infoSpan);
@@ -18605,8 +18642,8 @@ _display_api_js__WEBPACK_IMPORTED_MODULE_1__ = (__webpack_async_dependencies__.t
 
 
 
-const pdfjsVersion = "4.2.62";
-const pdfjsBuild = "3d902fff7";
+const pdfjsVersion = "4.2.63";
+const pdfjsBuild = "8601b06ea";
 
 __webpack_async_result__();
 } catch(e) { __webpack_async_result__(e); } });

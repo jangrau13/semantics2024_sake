@@ -195,6 +195,7 @@
     <div data-id="{{myID}}" id="pdf_id"></div>
     <div id="modal-root"></div>
     <div id="popus"></div>
+    <div id="editorHighlight"></div>
 </div>
 <div id="content-container">
     <div class="mySidebar" id="left-sidebar">
@@ -210,6 +211,7 @@
                         title="saveKnowledge">
                     <span>Download Knowledge</span>
                 </button>
+                <button id="editMode">Toggle Editor Mode</button>
             </div>
             <div class="button-container">
                 <div id="scaleSelectContainer">
@@ -376,7 +378,6 @@
             const elements = document.getElementsByClassName("pdf_utils");
             for (let elementsKey in elements) {
                 if (elements[elementsKey].style) {
-
                     elements[elementsKey].style.display = viewerExists ? 'block' : 'none'
                 }
             }
@@ -392,6 +393,16 @@
 
     checkViewer();
 
+    let currentMode = 0;
+
+    document.getElementById("editMode").addEventListener('click', (event) => {
+        currentMode = currentMode === 0 ? 9 : 0; // Toggle between 0 and 9
+
+        window.PDFViewerApplication.eventBus.dispatch("switchannotationeditormode", {
+            source: event.currentTarget,
+            mode: currentMode,
+        });
+    });
     function downloadKnowledge() {
         window.wiserEventBus.emit('downloadKnowledge', {
             please: 'now'
@@ -400,27 +411,6 @@
             console.log("handle knowledge confirmation", msg)
         })
     }
-
-    function checkForStar() {
-        const pdfDiv = document.getElementById('myPDFTitle');
-        const saveButton = document.getElementById('saveKnowledge');
-
-        if (!pdfDiv.textContent.includes('*')) {
-            saveButton.style.display = 'block';
-        } else {
-            saveButton.style.display = 'none';
-        }
-    }
-
-    // Set up a MutationObserver to monitor changes to the pdf_id element
-    const pdfDiv = document.getElementById('myPDFTitle');
-    const observer = new MutationObserver(checkForStar);
-
-    // Configure the observer to watch for changes to the child list and character data of the pdf_id element
-    observer.observe(pdfDiv, { childList: true, subtree: true, characterData: true });
-
-    // Initial check in case the content already contains a star
-    checkForStar();
 
 </script>
 </body>

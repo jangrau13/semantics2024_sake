@@ -52275,6 +52275,8 @@ class HighlightAnnotation extends MarkupAnnotation {
     ap,
     marks_on_page
   }) {
+    let wiserOpacity = 0.5;
+    let rdfa;
     const {
       color,
       opacity,
@@ -52297,7 +52299,7 @@ class HighlightAnnotation extends MarkupAnnotation {
       closestMark = wiserFindClosestMark(marks_on_page, annotation);
     }
     if (closestMark) {
-      const rdfa = closestMark.children.filter(child => {
+      rdfa = closestMark.children.filter(child => {
         const attributes = child.attributes;
         return attributes["class"] === "rdfa-content";
       })[0];
@@ -52307,7 +52309,13 @@ class HighlightAnnotation extends MarkupAnnotation {
       }
     }
     highlight.set("C", Array.from(color, c => c / 255));
-    highlight.set("CA", opacity);
+    if (rdfa) {
+      console.log("setting opacity to WISER", wiserOpacity);
+      console.log("old opacity", opacity);
+      highlight.set("CA", wiserOpacity);
+    } else {
+      highlight.set("CA", opacity);
+    }
     if (user) {
       highlight.set("T", isAscii(user) ? user : stringToUTF16String(user, true));
     }
@@ -55528,7 +55536,7 @@ class WorkerMessageHandler {
       docId,
       apiVersion
     } = docParams;
-    const workerVersion = "4.2.62";
+    const workerVersion = "4.2.63";
     if (apiVersion !== workerVersion) {
       throw new Error(`The API version "${apiVersion}" does not match ` + `the Worker version "${workerVersion}".`);
     }
@@ -56098,8 +56106,8 @@ if (typeof window === "undefined" && !isNodeJS && typeof self !== "undefined" &&
 
 ;// CONCATENATED MODULE: ./src/pdf.worker.js
 
-const pdfjsVersion = "4.2.62";
-const pdfjsBuild = "3d902fff7";
+const pdfjsVersion = "4.2.63";
+const pdfjsBuild = "8601b06ea";
 
 var __webpack_exports__WorkerMessageHandler = __webpack_exports__.WorkerMessageHandler;
 export { __webpack_exports__WorkerMessageHandler as WorkerMessageHandler };
