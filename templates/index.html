@@ -134,8 +134,9 @@
         .wiserModal {
             display: grid;
             border-radius: 10px;
+            grid-template-columns: 1fr; /* One column grid */
+            align-items: center;
             justify-content: center;
-
         }
 
         .wiserModal .title {
@@ -184,6 +185,28 @@
             margin: 10px;
         }
 
+        .wiserSearchLabel {
+            display: block;
+        }
+
+        .wiserSearchInput {
+            display: block;
+            border: 2px solid #ccc; /* Add a border with a light gray color */
+            border-radius: 5px; /* Round the corners of the input box */
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); /* Add a subtle shadow for depth */
+        }
+
+        .wiserSearchInput:hover{
+            border-color: #007BFF; /* Change border color on focus */
+            box-shadow: 0 2px 5px rgba(0, 123, 255, 0.5); /* Add shadow on focus */
+            outline: none; /* Remove default outline */
+        }
+
+        .highlightedConceptButton {
+            border: 2px solid red !important;
+            color: red !important;
+        }
+
     </style>
 </head>
 <body>
@@ -209,8 +232,9 @@
                 <button id="saveKnowledge"
                         onclick="downloadKnowledge()"
                         title="saveKnowledge">
-                    <span>Download Knowledge</span>
+                    <span>Save Knowledge to KG</span>
                 </button>
+                <button id="syncPDF">Sync PDF with KG</button>
                 <button id="editMode">Toggle Editor Mode</button>
             </div>
             <div class="button-container">
@@ -403,14 +427,63 @@
             mode: currentMode,
         });
     });
+    document.getElementById("syncPDF").addEventListener('click', (event) => {
+        // Get the current window location
+        const currentLocation = window.location.href;
+
+        // Extract the last part of the URL after the last slash
+        const pdfUrl = currentLocation.substring(currentLocation.lastIndexOf('/') + 1);
+
+        // Construct the API URL
+        const apiUrl = `/api/update/${pdfUrl}`;
+
+        // Make a GET request to the constructed API URL
+        fetch(apiUrl, {
+            method: 'GET'
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                alert("Syncing was successful")
+            })
+            .catch(error => {
+                console.error('There has been a problem with your fetch operation:', error);
+            });
+    });
+
     function downloadKnowledge() {
+        //save PDF first before
+        alert("You need to save the PDF first to not loose data")
+        const downloadButton = document.getElementById("download")
+        downloadButton.click()
         window.wiserEventBus.emit('downloadKnowledge', {
             please: 'now'
         });
         window.wiserEventBus.on('knowledgeConfirmation', (msg) => {
-            console.log("handle knowledge confirmation", msg)
+            let prefix = msg.updatedList ? msg.updatedList.length : "no"
+            alert(prefix + " element(s) were updated")
         })
     }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const buttonContainer = document.querySelector('#right-sidebar .button-container');
+
+        buttonContainer.addEventListener('click', function(event) {
+            if (event.target.tagName === 'BUTTON') {
+                // Remove the highlighted class from all buttons
+                const buttons = buttonContainer.querySelectorAll('button');
+                buttons.forEach(btn => btn.classList.remove('highlightedConceptButton'));
+
+                // Add the highlighted class to the clicked button
+                event.target.classList.add('highlightedConceptButton');
+            }
+        });
+    });
+
 
 </script>
 </body>
