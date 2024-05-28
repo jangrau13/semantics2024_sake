@@ -4,14 +4,16 @@
 //! cargo run -p example-static-file-server
 //! ```
 
+use lopdf::{dictionary, Dictionary, ObjectId};
+use std::collections::HashMap;
 use std::error::Error;
 use std::string::String;
-use std::fs;
 use std::fs::{File};
 use std::io::{Read, Write};
-use axum::{routing::{post, put, get}, Router, Extension};
+use axum::{routing::{get}, Router, Extension};
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::ops::Deref;
+use std::path::{PathBuf};
 use std::sync::Arc;
 use axum::response::{Html, IntoResponse, Response};
 use tower_http::{
@@ -35,7 +37,7 @@ use graph_rdfa_processor::RdfaGraph;
 use sophia::api::prelude::*;
 use sophia::inmem::graph::{FastGraph, LightGraph};
 use sophia::turtle::parser::{turtle};
-use axum::http::{HeaderMap, HeaderValue};
+use axum::http::{HeaderMap};
 use scraper::Selector;
 use sophia::jsonld::{serializer::JsonLdSerializer};
 use sophia::turtle::serializer::{
@@ -45,13 +47,21 @@ use sophia::turtle::serializer::{
 };
 use sophia::xml::serializer::RdfXmlSerializer;
 use atomic_lib::{Resource, Store, Storelike, Value};
-use atomic_lib::errors::AtomicResult;
+use atomic_lib::agents::Agent;
 use atomic_lib::values::SubResource;
+use axum::body::Body;
+use axum::routing::{post, put};
+use lopdf::content::{Operation};
+use lopdf::{Document, Object};
 use reqwest::{Client, multipart};
+use tokio::sync::RwLock;
+use tempfile::{NamedTempFile};
 
 
 #[tokio::main]
 async fn main() {
+    let manager = Arc::new(SingletonManager::new());
+
     let tera = match Tera::new("templates/**/*.html") {
         Ok(t) => t,
         Err(e) => {
@@ -69,7 +79,7 @@ async fn main() {
         .init();
 
     tokio::join!(
-        serve(using_serve_dir(shared_tera.clone()), 8000)
+        serve(using_serve_dir(shared_tera.clone(), manager), 8000)
     );
 }
 
@@ -95,95 +105,142 @@ async fn process_multipart(mut multipart: Multipart) -> Result<(String, Vec<u8>)
     }
 }
 
-fn save_file(file_path: &Path, data: &[u8]) -> Result<(), (StatusCode, &'static str)> {
-    match File::create(file_path) {
+async fn save_pdf(
+    Extension(manager): Extension<Arc<SingletonManager>>,
+    multipart: Multipart,
+) -> impl IntoResponse {
+    let my_atomic_store = get_local_atomic_store(manager).await.unwrap();
+    match process_multipart(multipart).await {
+        Ok((filename, pdf_data)) => {
+            match upload_file_to_atomic(filename, &my_atomic_store, pdf_data).await {
+                Ok(_) => (StatusCode::OK, "File uploaded successfully").into_response(),
+                Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Failed to upload file").into_response(),
+            }
+        }
+        Err(_) => (StatusCode::BAD_REQUEST, "Failed to process multipart data").into_response(),
+    }
+}
+
+async fn handle_pdf_request(
+    axum::extract::Path(my_pdf_file): axum::extract::Path<String>,
+    Extension(manager): Extension<Arc<SingletonManager>>,
+) -> impl IntoResponse {
+    // Remove the .pdf suffix
+    let removed_file_ending = my_pdf_file.strip_suffix(".pdf").unwrap().to_string();
+
+    // Retrieve the atomic server
+    let my_atomic_server = get_local_atomic_store(manager).await.unwrap();
+
+    // Get the latest file
+    match get_latest_file(&removed_file_ending, &my_atomic_server).await {
         Ok(mut file) => {
-            if let Err(e) = file.write_all(data) {
-                eprintln!("Failed to write file: {}", e);
-                Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to write file"))
-            } else {
-                Ok(())
-            }
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer).unwrap();
+            // Return the file as a response
+            Response::builder()
+                .header("Content-Type", "application/pdf")
+                .body(Body::from(buffer))
+                .unwrap()
         }
-        Err(e) => {
-            eprintln!("Failed to create file: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to create file"))
+        Err(_) => {
+            let buffer = create_404_pdf_content();
+            // Return the generated PDF as a response
+            Response::builder()
+                .header("Content-Type", "application/pdf")
+                .body(Body::from(buffer))
+                .unwrap()
         }
     }
 }
 
-async fn save_pdf(multipart: Multipart) -> impl IntoResponse {
-    match process_multipart(multipart).await {
-        Ok((filename, pdf_data)) => {
-            let file_path = PathBuf::from("public/pdf").join(&filename);
-            match save_file(&file_path, &pdf_data) {
-                Ok(_) => (StatusCode::OK, "File saved successfully").into_response(),
-                Err(e) => e.into_response(),
+fn create_404_pdf_content() -> Vec<u8> {
+    let mut doc = Document::with_version("1.5");
+
+    let mut content = lopdf::content::Content {
+        operations: vec![]
+    };
+    content.operations.push(Operation::new("BT", vec![]));
+    content.operations.push(Operation::new("Tf", vec![Object::Name("F1".as_bytes().to_vec()), Object::Integer(32)])); // Smaller font size
+    content.operations.push(Operation::new("Td", vec![Object::Integer(150), Object::Integer(750)])); // Centered text
+    content.operations.push(Operation::new("Tj", vec![Object::string_literal("404 - Document Not Found")]));
+    content.operations.push(Operation::new("ET", vec![]));
+
+    content.operations.push(Operation::new("BT", vec![]));
+    content.operations.push(Operation::new("Tf", vec![Object::Name("F1".as_bytes().to_vec()), Object::Integer(16)])); // Smaller font size for description
+    content.operations.push(Operation::new("Td", vec![Object::Integer(100), Object::Integer(700)]));
+    content.operations.push(Operation::new("Tj", vec![Object::string_literal("No PDF with this name found in the knowledge graph.")]));
+    content.operations.push(Operation::new("ET", vec![]));
+
+    let content_stream = lopdf::Stream::new(Dictionary::new(), content.encode().unwrap());
+    let content_stream_id = doc.add_object(content_stream);
+
+    let font_id = doc.add_object(
+        lopdf::dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type1",
+            "BaseFont" => "Helvetica",
+        }
+    );
+
+    let resources_id = doc.add_object(
+        lopdf::dictionary! {
+            "Font" => lopdf::dictionary! {
+                "F1" => font_id,
             }
         }
-        Err(e) => e.into_response(),
-    }
-}
+    );
 
-async fn save_and_update_pdf(multipart: Multipart) -> impl IntoResponse {
-    match process_multipart(multipart).await {
-        Ok((filename, pdf_data)) => {
-            let file_path = PathBuf::from("public/pdf").join(&filename);
-
-            if file_path.exists() {
-                let backup_dir = Path::new("backup");
-                if !backup_dir.exists() {
-                    if let Err(e) = fs::create_dir(backup_dir) {
-                        eprintln!("Failed to create backup directory: {}", e);
-                        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create backup directory").into_response();
-                    }
-                }
-
-                let base_name = filename.trim_end_matches(".pdf");
-                let mut max_version = 0;
-                if let Ok(entries) = fs::read_dir(backup_dir) {
-                    for entry in entries.flatten() {
-                        if let Some(file_name) = entry.file_name().to_str() {
-                            if file_name.starts_with(base_name) && file_name.ends_with(".pdf") {
-                                if let Ok(version) = file_name.trim_start_matches(base_name).trim_start_matches('_').trim_end_matches(".pdf").parse::<u32>() {
-                                    if version > max_version {
-                                        max_version = version;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                let new_version = max_version + 1;
-                let backup_file_name = format!("{}_{}.pdf", base_name, new_version);
-                let backup_path = backup_dir.join(&backup_file_name);
-
-                if let Err(e) = fs::rename(&file_path, &backup_path) {
-                    eprintln!("Failed to move existing file to backup: {}", e);
-                    return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to move existing file to backup").into_response();
-                }
-            }
-
-            match save_file(&file_path, &pdf_data) {
-                Ok(_) => (StatusCode::OK, "File saved successfully").into_response(),
-                Err(e) => e.into_response(),
-            }
+    let page_id = doc.add_object(
+        lopdf::dictionary! {
+            "Type" => "Page",
+            "Parent" => (ObjectId::from((2,0))), // Set temporary parent, to be updated
+            "Contents" => content_stream_id,
+            "Resources" => resources_id,
+            "MediaBox" => vec![0.into(), 0.into(), 595.into(), 842.into()],
         }
-        Err(e) => e.into_response(),
+    );
+
+    let pages_id = doc.add_object(
+        lopdf::dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![page_id.into()],
+            "Count" => 1,
+        }
+    );
+
+    // Update the parent reference in the page dictionary
+    if let Some(page_dict) = doc.objects.get_mut(&page_id) {
+        if let lopdf::Object::Dictionary(ref mut dict) = *page_dict {
+            dict.set("Parent", pages_id);
+        }
     }
+
+    let catalog_id = doc.add_object(
+        lopdf::dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        }
+    );
+
+    doc.trailer.set("Root", catalog_id);
+
+    let mut buffer = Vec::new();
+    doc.save_to(&mut buffer).unwrap();
+    buffer
 }
 
 async fn handle_request(
     Extension(tera): Extension<Arc<Tera>>,
     axum::extract::Path(my_url_id): axum::extract::Path<String>,
     headers: HeaderMap,
+    Extension(manager): Extension<Arc<SingletonManager>>,
 ) -> impl IntoResponse {
-    let mut response_headers = HeaderMap::new();
-    response_headers.insert("Cache-Control", HeaderValue::from_static("no-store, no-cache, must-revalidate, proxy-revalidate"));
-    response_headers.insert("Pragma", HeaderValue::from_static("no-cache"));
-    response_headers.insert("Expires", HeaderValue::from_static("0"));
-
+    //hack the browser to
+    let response_headers = HeaderMap::new();
+    //response_headers.insert("Cache-Control", HeaderValue::from_static("no-store, no-cache, must-revalidate, proxy-revalidate"));
+    //response_headers.insert("Pragma", HeaderValue::from_static("no-cache"));
+    //response_headers.insert("Expires", HeaderValue::from_static("0"));
+    let my_atomic_store = get_local_atomic_store(manager.clone()).await.unwrap();
     match headers.get(axum::http::header::CONTENT_TYPE).and_then(|ct| ct.to_str().ok()) {
         Some(content_type) if matches!(
             content_type,
@@ -194,7 +251,9 @@ async fn handle_request(
                 | "application/ld+json"
         ) => {
             // we need to update the PDF according to the Atomic SST first
-            match update_pdf(&my_url_id).await {
+            let file_name = my_url_id.clone() + ".pdf";
+            let file = get_latest_file(&*my_url_id, &my_atomic_store).await.unwrap();
+            match update_pdf(file, &file_name, &my_atomic_store).await {
                 Ok(_) => {
                     if let Some(output) = get_annotations(&my_url_id, content_type).await {
                         (response_headers, output.into_response())
@@ -226,8 +285,13 @@ async fn handle_htmx(Extension(tera): Extension<Arc<Tera>>,
     Html(tera.render("viewer_fragment.html", &context).expect("Failed to render template"))
 }
 
-async fn handle_update(axum::extract::Path(my_pdf_name): axum::extract::Path<String>) -> impl IntoResponse {
-    match update_pdf(&my_pdf_name).await {
+async fn handle_update(
+    Extension(manager): Extension<Arc<SingletonManager>>,
+    axum::extract::Path(my_pdf_name): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let my_atomic_store = get_local_atomic_store(manager).await.unwrap();
+    let my_file = get_latest_file(&my_pdf_name, &my_atomic_store).await.unwrap();
+    match update_pdf(my_file, &my_pdf_name, &my_atomic_store).await {
         Ok(_) => StatusCode::OK,
         Err(err) => {
             eprintln!("Error updating PDF: {}", err); // Log the error
@@ -236,35 +300,32 @@ async fn handle_update(axum::extract::Path(my_pdf_name): axum::extract::Path<Str
     }
 }
 
-async fn get_latest_file_handle(axum::extract::Path(my_pdf_name): axum::extract::Path<String>) -> Result<File, Box<dyn std::error::Error>> {
-    let pdf_name = my_pdf_name;
-    get_latest_file(&pdf_name).await
-}
-
-async fn get_latest_file(pdf_name: &str) -> Result<File, Box<dyn Error>> {
-
-    let my_atomic_store = get_local_atomic_store()?;
-
-    // Get the file name and path
-    let full_pdf_name = pdf_name.to_owned() + ".pdf";
-    let file_path = PathBuf::from("public/pdf").join(&full_pdf_name);
-
+async fn get_latest_file(pdf_name: &str, my_atomic_store: &Store) -> Result<File, Box<dyn Error>> {
     // Get the download URL from the atomic store
     let file_names = get_latest_version(my_atomic_store, &pdf_name);
     if let Some(file) = file_names {
         if let Ok(download_url) = file.get("https://atomicdata.dev/properties/downloadURL") {
             let url = download_url.to_string();
-
+            let auth_header = "eyJodHRwczovL2F0b21pY2RhdGEuZGV2L3Byb3BlcnRpZXMvYXV0aC9hZ2VudCI6Imh0dHBzOi8vd2lzZXItc3A0LmludGVyYWN0aW9ucy5pY3MudW5pc2cuY2gvYWdlbnRzL0tBK3I4VWtpOXZEM2RFL0tOeFI3ZXhIRzlaRWxvSDluWFA0dk5qTzNSTW89IiwiaHR0cHM6Ly9hdG9taWNkYXRhLmRldi9wcm9wZXJ0aWVzL2F1dGgvcmVxdWVzdGVkU3ViamVjdCI6Imh0dHBzOi8vd2lzZXItc3A0LmludGVyYWN0aW9ucy5pY3MudW5pc2cuY2giLCJodHRwczovL2F0b21pY2RhdGEuZGV2L3Byb3BlcnRpZXMvYXV0aC9wdWJsaWNLZXkiOiJLQStyOFVraTl2RDNkRS9LTnhSN2V4SEc5WkVsb0g5blhQNHZOak8zUk1vPSIsImh0dHBzOi8vYXRvbWljZGF0YS5kZXYvcHJvcGVydGllcy9hdXRoL3RpbWVzdGFtcCI6MTcxNjg4Mzk1MTE1NywiaHR0cHM6Ly9hdG9taWNkYXRhLmRldi9wcm9wZXJ0aWVzL2F1dGgvc2lnbmF0dXJlIjoia3QyTTBWL3hEWjlIWU4vaG1CSitRUE9nYzV1SnNKTG5rcmlObndxY3A3S0NzUUNTZm13M1daQ004YXMrWnVMWlpMSUNzUk9RNWE2bUdTNVlneWVaQkE9PSJ9";
             // Download the PDF
             let client = Client::new();
-            let response = client.get(url).send().await.unwrap();
+            let response = client
+                .get(url)
+                .header("Authorization", format!("Bearer {}", auth_header))
+                .send()
+                .await
+                .unwrap();
             let bytes = response.bytes().await.unwrap();
 
-            // Save the PDF to the buffer
-            let mut file = File::create(&file_path).unwrap();
-            file.write_all(&bytes).unwrap();
+            // Create a temporary file and write the PDF bytes into it
+            let mut temp_file = NamedTempFile::new().unwrap();
+            temp_file.write_all(&bytes).unwrap();
+            temp_file.flush().unwrap(); // Ensure all data is written
 
-            return Ok(file)
+            // Reopen the file as a Tokio File
+            let temp_path = temp_file.into_temp_path();
+            let file = File::open(temp_path).unwrap();
+            Ok(file)
         } else {
             Err("Download URL not found".into())
         }
@@ -273,82 +334,129 @@ async fn get_latest_file(pdf_name: &str) -> Result<File, Box<dyn Error>> {
     }
 }
 
-fn get_local_atomic_store() -> Result<Store, Box<dyn Error>> {
-    let my_atomic_agent = atomic_lib::agents::Agent::from_private_key_and_subject(
-        "rEdi8xEOMiTQPsNKa9cHr5GoNDMJ5hcUlm9WHKDaKUc=",
-        "https://wiser-sp4.interactions.ics.unisg.ch/agents/KA+r8Uki9vD3dE/KNxR7exHG9ZEloH9nXP4vNjO3RMo=",
-    ).map_err(|e| format!("Failed to create agent: {:?}", e))?;
-
-    // Initialize and populate the store
-    let my_atomic_store = Store::init().map_err(|e| format!("Failed to initialize store: {:?}", e))?;
-    my_atomic_store.populate().map_err(|e| format!("Failed to populate store: {:?}", e))?;
-    my_atomic_store.set_default_agent(my_atomic_agent.clone());
-    Ok(my_atomic_store)
+struct SingletonManager {
+    stores: RwLock<HashMap<String, Arc<Store>>>,
 }
 
-fn get_latest_version(my_atomic_store: Store, my_pdf_name: &str) -> Option<Resource> {
+impl SingletonManager {
+    fn new() -> Self {
+        SingletonManager {
+            stores: RwLock::new(HashMap::new()),
+        }
+    }
+
+    async fn get_or_create_store(&self, agent: &Agent) -> Option<Arc<Store>> {
+        let mut stores = self.stores.write().await;
+
+        let subject_str = agent.subject.to_string();
+
+        if let Some(store) = stores.get(&subject_str) {
+            Some(store.clone())
+        } else {
+            match Store::init() {
+                Ok(new_store) => {
+                    let new_store = Arc::new(new_store);
+                    new_store.set_default_agent(agent.clone());
+                    let _test_res = new_store.fetch_resource("https://wiser-sp4.interactions.ics.unisg.ch/classes", Some(agent)).unwrap();
+                    stores.insert(subject_str, new_store.clone());
+                    Some(new_store)
+                }
+                Err(_) => None,
+            }
+        }
+    }
+}
+
+async fn get_local_atomic_store(manager: Arc<SingletonManager>) -> Result<Store, String> {
+    let my_atomic_agent = get_local_atomic_agent().unwrap();
+
+    if let Some(store) = manager.get_or_create_store(&my_atomic_agent).await {
+        // Use the store
+        Ok(store.deref().clone())
+    } else {
+        Err("Could not find the store".to_string())
+    }
+}
+
+fn get_local_atomic_agent() -> Result<Agent, String> {
+    let my_atomic_agent = Agent::from_secret(
+        "eyJjbGllbnQiOnt9LCJzdWJqZWN0IjoiaHR0cHM6Ly93aXNlci1zcDQuaW50ZXJhY3Rpb25zLmljcy51bmlzZy5jaC9hZ2VudHMvS0ErcjhVa2k5dkQzZEUvS054UjdleEhHOVpFbG9IOW5YUDR2TmpPM1JNbz0iLCJwcml2YXRlS2V5IjoickVkaTh4RU9NaVRRUHNOS2E5Y0hyNUdvTkRNSjVoY1VsbTlXSEtEYUtVYz0iLCJwdWJsaWNLZXkiOiJLQStyOFVraTl2RDNkRS9LTnhSN2V4SEc5WkVsb0g5blhQNHZOak8zUk1vPSJ9"
+    ).map_err(|e| format!("Failed to create agent: {:?}", e)).unwrap();
+    Ok(my_atomic_agent)
+}
+
+
+fn get_latest_version(my_atomic_store: &Store, my_pdf_name: &str) -> Option<Resource> {
     let mut filenames = Vec::new();
-    let files = my_atomic_store.get_resource(&*("https://wiser-sp4.interactions.ics.unisg.ch/collections/collection/".to_string()
-        + my_pdf_name.to_string().as_str())).unwrap();
-    let attachments = files.get("https://atomicdata.dev/properties/attachments").unwrap();
+    let my_atomic_agent = get_local_atomic_agent().unwrap();
+    match my_atomic_store.fetch_resource(&*("https://wiser-sp4.interactions.ics.unisg.ch/collections/collection/".to_string()
+        + my_pdf_name.to_string().as_str()), Some(&my_atomic_agent)) {
+        Ok(files) => {
+            let attachments = match files.get("https://atomicdata.dev/properties/attachments") {
+                Ok(att) => att.clone(),
+                Err(_) => {
+                    my_atomic_store.build_index(true).unwrap();
+                    my_atomic_store.populate().unwrap();
+                    // It seems to be a caching problem here, so I need to fetch
+                    let potential_resource_url = format!("https://wiser-sp4.interactions.ics.unisg.ch/collections/collection/{}", my_pdf_name);
+                    let my_atomic_agent = get_local_atomic_agent().unwrap();
+                    let potential_resource = my_atomic_store.fetch_resource(&potential_resource_url, Some(&my_atomic_agent));
+                    match potential_resource {
+                        Ok(pot_resource) => {
+                            pot_resource.get("https://atomicdata.dev/properties/attachments").unwrap().clone()
+                        }
+                        Err(_) => {
+                            return None;
+                        }
+                    }
+                }
+            };
+            let mut newest_version: Option<(String, String)> = None; // (timestamp, resource)
 
-    let mut newest_version: Option<(String, String)> = None; // (timestamp, resource)
+            if let Value::ResourceArray(vec_subresources) = attachments {
+                for sub_res in vec_subresources {
+                    if let SubResource::Subject(sub) = sub_res {
+                        let final_resource = my_atomic_store.fetch_resource(&sub, Some(&my_atomic_agent)).unwrap();
+                        let file_name = final_resource.get("https://atomicdata.dev/properties/internalId").unwrap();
+                        let file_name_str = file_name.to_string();
+                        filenames.push(file_name_str.clone());
 
-    if let Value::ResourceArray(vec_subresources) = attachments {
-        for sub_res in vec_subresources {
-            if let SubResource::Subject(sub) = sub_res {
-                let final_resource = my_atomic_store.get_resource(sub).unwrap();
-                let file_name = final_resource.get("https://atomicdata.dev/properties/internalId").unwrap();
-                let file_name_str = file_name.to_string();
-                filenames.push(file_name_str.clone());
-
-                // Extract timestamp from the internal ID
-                if let Some((timestamp_str, _)) = file_name_str.split_once('-') {
-                    if let Ok(timestamp) = timestamp_str.parse::<u64>() {
-                        if newest_version.is_none() || timestamp > newest_version.as_ref().unwrap().0.parse::<u64>().unwrap() {
-                            newest_version = Some((timestamp_str.to_string(), sub.to_string()));
+                        // Extract timestamp from the internal ID
+                        if let Some((timestamp_str, _)) = file_name_str.split_once('-') {
+                            if let Ok(timestamp) = timestamp_str.parse::<u64>() {
+                                if newest_version.is_none() || timestamp > newest_version.as_ref().unwrap().0.parse::<u64>().unwrap() {
+                                    newest_version = Some((timestamp_str.to_string(), sub.to_string()));
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
-    }
 
-    if let Some((_, latest_resource)) = &newest_version {
-        let latest_final_resource = my_atomic_store.get_resource(latest_resource).unwrap();
-        Some(latest_final_resource)
-    } else {
-        None
+            if let Some((_, latest_resource)) = &newest_version {
+                let latest_final_resource = my_atomic_store.fetch_resource(latest_resource, Some(&my_atomic_agent)).unwrap();
+                Some(latest_final_resource)
+            } else {
+                None
+            }
+        }
+        _ => None
     }
 }
 
-
-async fn upload_pdf_to_atomic(axum::extract::Path(my_pdf_name): axum::extract::Path<String>) -> () {
-    //TODO: make this work with Atomic, so that everything runs with Atomic then.
-    let my_atomic_store = get_local_atomic_store();
-    let full_pdf_name = my_pdf_name.to_owned() + ".pdf";
-    let file_path = PathBuf::from("public/pdf").join(&full_pdf_name);
-
-    if !file_path.exists() {
-        return;
-    }
-    let mut file = File::open(&file_path).unwrap();
-    let mut file_content = Vec::new();
-    file.read_to_end(&mut file_content).unwrap();
-
-    // Create a multipart form
+async fn upload_file_to_atomic(my_pdf_name: String, my_atomic_store: &Store, file_content: Vec<u8>) -> Result<bool, String> {
     let form = multipart::Form::new()
-        .part("file", multipart::Part::bytes(file_content).file_name(full_pdf_name));
+        .part("file", multipart::Part::bytes(file_content).file_name(my_pdf_name.clone()));
 
     // Make the POST request to upload the file
-    let client = reqwest::Client::new();
+    let client = Client::new();
 
-    match format_and_create_if_not_exists(my_pdf_name, &my_atomic_store) {
+    match format_and_create_if_not_exists(&my_pdf_name, my_atomic_store) {
         None => {
-            println!("formatting did not work")
+            Err("formatting did not work".to_string())
         }
         Some(parent) => {
-            let auth_header = "eyJodHRwczovL2F0b21pY2RhdGEuZGV2L3Byb3BlcnRpZXMvYXV0aC9hZ2VudCI6Imh0dHBzOi8vd2lzZXItc3A0LmludGVyYWN0aW9ucy5pY3MudW5pc2cuY2gvYWdlbnRzL0tBK3I4VWtpOXZEM2RFL0tOeFI3ZXhIRzlaRWxvSDluWFA0dk5qTzNSTW89IiwiaHR0cHM6Ly9hdG9taWNkYXRhLmRldi9wcm9wZXJ0aWVzL2F1dGgvcmVxdWVzdGVkU3ViamVjdCI6Imh0dHBzOi8vd2lzZXItc3A0LmludGVyYWN0aW9ucy5pY3MudW5pc2cuY2giLCJodHRwczovL2F0b21pY2RhdGEuZGV2L3Byb3BlcnRpZXMvYXV0aC9wdWJsaWNLZXkiOiJLQStyOFVraTl2RDNkRS9LTnhSN2V4SEc5WkVsb0g5blhQNHZOak8zUk1vPSIsImh0dHBzOi8vYXRvbWljZGF0YS5kZXYvcHJvcGVydGllcy9hdXRoL3RpbWVzdGFtcCI6MTcxNjgwNzc5NzQxOCwiaHR0cHM6Ly9hdG9taWNkYXRhLmRldi9wcm9wZXJ0aWVzL2F1dGgvc2lnbmF0dXJlIjoiZzJFdXNWU2U4T0FpQ2tQOEQ5TENGOVU0L2d1dnFOajB3SXRzdW1MVm04Rm5LN0s2dXRZU1pFc3Z0clo4Z2YzM3BnMitzSDBENkthcis4cXZWVkptQ1E9PSJ9";
+            let auth_header = "eyJodHRwczovL2F0b21pY2RhdGEuZGV2L3Byb3BlcnRpZXMvYXV0aC9hZ2VudCI6Imh0dHBzOi8vd2lzZXItc3A0LmludGVyYWN0aW9ucy5pY3MudW5pc2cuY2gvYWdlbnRzL0tBK3I4VWtpOXZEM2RFL0tOeFI3ZXhIRzlaRWxvSDluWFA0dk5qTzNSTW89IiwiaHR0cHM6Ly9hdG9taWNkYXRhLmRldi9wcm9wZXJ0aWVzL2F1dGgvcmVxdWVzdGVkU3ViamVjdCI6Imh0dHBzOi8vd2lzZXItc3A0LmludGVyYWN0aW9ucy5pY3MudW5pc2cuY2giLCJodHRwczovL2F0b21pY2RhdGEuZGV2L3Byb3BlcnRpZXMvYXV0aC9wdWJsaWNLZXkiOiJLQStyOFVraTl2RDNkRS9LTnhSN2V4SEc5WkVsb0g5blhQNHZOak8zUk1vPSIsImh0dHBzOi8vYXRvbWljZGF0YS5kZXYvcHJvcGVydGllcy9hdXRoL3RpbWVzdGFtcCI6MTcxNjg4Mzk1MTE1NywiaHR0cHM6Ly9hdG9taWNkYXRhLmRldi9wcm9wZXJ0aWVzL2F1dGgvc2lnbmF0dXJlIjoia3QyTTBWL3hEWjlIWU4vaG1CSitRUE9nYzV1SnNKTG5rcmlObndxY3A3S0NzUUNTZm13M1daQ004YXMrWnVMWlpMSUNzUk9RNWE2bUdTNVlneWVaQkE9PSJ9";
             let response = client.post("https://wiser-sp4.interactions.ics.unisg.ch/upload?parent=".to_owned() + parent.as_str())
                 .multipart(form)
                 .header("Authorization", format!("Bearer {}", auth_header)) // replace with actual token
@@ -358,24 +466,31 @@ async fn upload_pdf_to_atomic(axum::extract::Path(my_pdf_name): axum::extract::P
             // Check the response
             if response.status().is_success() {
                 println!("File uploaded successfully");
-                return;
+                return Ok(true);
             } else {
                 let error_text = response.text().await.unwrap();
                 println!("Failed to upload file: {}", error_text);
+                return Err(error_text);
             }
         }
     }
 }
 
-fn format_and_create_if_not_exists(my_pdf_name: String, my_atomic_store: &Store) -> Option<String> {
-    let parent = "https://wiser-sp4.interactions.ics.unisg.ch/collections/collection/".to_string() + my_pdf_name.as_str();
-    match my_atomic_store.get_resource(&parent) {
+fn format_and_create_if_not_exists(my_pdf_name: &str, my_atomic_store: &Store) -> Option<String> {
+    let my_atomic_agent = get_local_atomic_agent().unwrap();
+    let formatted_name = if my_pdf_name.ends_with(".pdf") {
+        &my_pdf_name[..my_pdf_name.len() - 4] // Remove the ".pdf" extension
+    } else {
+        my_pdf_name
+    };
+    let parent = "https://wiser-sp4.interactions.ics.unisg.ch/collections/collection/".to_string() + formatted_name;
+    match my_atomic_store.fetch_resource(&parent, Some(&my_atomic_agent)) {
         Ok(_) => {
             Some(parent)
         }
         Err(_) => {
             let mut new_resource = Resource::new(parent.clone());
-            new_resource.set_string("https://atomicdata.dev/properties/name".to_string(), &my_pdf_name, my_atomic_store).unwrap();
+            new_resource.set_string("https://atomicdata.dev/properties/name".to_string(), &formatted_name, my_atomic_store).unwrap();
             new_resource.set_string("https://atomicdata.dev/properties/parent".to_string(),
                                     "https://wiser-sp4.interactions.ics.unisg.ch/collections/collection/wiser-collection",
                                     my_atomic_store).unwrap();
@@ -400,65 +515,51 @@ fn format_and_create_if_not_exists(my_pdf_name: String, my_atomic_store: &Store)
     }
 }
 
-async fn update_pdf(pdf_name: &str) -> Result<bool, String> {
-
-    if let Ok(file) = get_latest_file(pdf_name.clone()){
-        // only go for it if
-        let my_atomic_store = get_local_atomic_store()?;
-        match my_atomic_store.get_resource("https://wiser-sp4.interactions.ics.unisg.ch/property/wiser-id") {
-            Ok(_res) => {
-                let mut doc = lopdf::Document::load_from(file).map_err(|e| format!("Failed to load PDF: {:?}", e))?;
-                let mut delete_me = Vec::new();
-                for (id, object) in &doc.objects {
-                    if let lopdf::Object::Dictionary(ref obj_dict) = object {
-                        for (_key, value) in obj_dict.as_hashmap() {
-                            if let lopdf::Object::String(content, _format) = value {
-                                let my_content = String::from_utf8_lossy(content).to_string();
-                                let html_content = scraper::Html::parse_fragment(&my_content);
-                                let selector = Selector::parse("[data-wiser-subject]").map_err(|e| format!("Failed to parse selector: {:?}", e))?;
-                                for element in html_content.select(&selector) {
-                                    // Extract the value of the `data-wiser-subject` attribute
-                                    if let Some(subject) = element.value().attr("data-wiser-subject") {
-                                        match my_atomic_store.get_resource(subject) {
-                                            Ok(_res) => (),
-                                            Err(_err) => {
-                                                // TODO: check if the error really should delete the stuff
-                                                //println!("atomic error: {:?}", _err);
-                                                delete_me.push(id.clone())
-                                            }
-                                        }
-                                    }
-                                }
-                                let selector = Selector::parse("[data-wiser-potential-subject]").map_err(|e| format!("Failed to parse selector: {:?}", e))?;
-                                for element in html_content.select(&selector) {
-                                    // Extract the value of the `data-wiser-subject` attribute
-                                    if let Some(_subject) = element.value().attr("data-wiser-potential-subject") {
-                                        //println!("deleting {}",_subject);
-                                        delete_me.push(id.clone());
-                                    }
+async fn update_pdf(pdf: File, pdf_name: &str, my_atomic_store: &Store) -> Result<bool, String> {
+    let my_atomic_agent = get_local_atomic_agent().unwrap();
+    let mut doc = lopdf::Document::load_from(pdf).map_err(|e| format!("Failed to load PDF: {:?}", e))?;
+    let mut delete_me = Vec::new();
+    for (id, object) in &doc.objects {
+        if let lopdf::Object::Dictionary(ref obj_dict) = object {
+            for (_key, value) in obj_dict.as_hashmap() {
+                if let lopdf::Object::String(content, _format) = value {
+                    let my_content = String::from_utf8_lossy(content).to_string();
+                    let html_content = scraper::Html::parse_fragment(&my_content);
+                    let selector = Selector::parse("[data-wiser-subject]").map_err(|e| format!("Failed to parse selector: {:?}", e))?;
+                    for element in html_content.select(&selector) {
+                        // Extract the value of the `data-wiser-subject` attribute
+                        if let Some(subject) = element.value().attr("data-wiser-subject") {
+                            match my_atomic_store.fetch_resource(subject, Some(&my_atomic_agent)) {
+                                Ok(_res) => (),
+                                Err(_err) => {
+                                    // TODO: check if the error really should delete the stuff
+                                    //println!("atomic error: {:?}", _err);
+                                    delete_me.push(id.clone())
                                 }
                             }
                         }
                     }
+                    let selector = Selector::parse("[data-wiser-potential-subject]").map_err(|e| format!("Failed to parse selector: {:?}", e))?;
+                    for element in html_content.select(&selector) {
+                        // Extract the value of the `data-wiser-subject` attribute
+                        if let Some(_subject) = element.value().attr("data-wiser-potential-subject") {
+                            //println!("deleting {}",_subject);
+                            delete_me.push(id.clone());
+                        }
+                    }
                 }
-                for delete_id in delete_me {
-                    //println!("deleting {}", delete_id.0);
-                    doc.delete_object(delete_id);
-                }
-                //doc.save(&file_path).map_err(|e| format!("Failed to save PDF: {:?}", e))?;
-
-                Ok(true)
-            }
-            Err(err) => {
-                // TODO: check if the error really should delete the stuff
-                //println!("atomic error: {:?}", err);
-                Err(format!("KG is not available: {:?}", err))
             }
         }
     }
-    // Only update if you can fetch wiser-id
+    for delete_id in delete_me {
+        //println!("deleting {}", delete_id.0);
+        doc.delete_object(delete_id);
+    }
+    let mut file_contents = Vec::new();
+    doc.save_to(&mut file_contents).unwrap();
+    upload_file_to_atomic(pdf_name.to_string(), my_atomic_store, file_contents).await.expect("TODO: panic message");
+    Ok(true)
 }
-
 
 async fn get_annotations(pdf_name: &str, serializer_name: &str) -> Option<String> {
     let full_pdf_name = pdf_name.to_owned() + ".pdf";
@@ -536,26 +637,26 @@ fn check_if_annot(my_primitive: &Primitive) -> bool {
     return result;
 }
 
-fn using_serve_dir(tera: Arc<Tera>) -> Router {
+fn using_serve_dir(tera: Arc<Tera>, store_manager: Arc<SingletonManager>) -> Router {
     // Set the maximum body size to 20MB (20 * 1024 * 1024 bytes)
     let max_body_size = 20 * 1024 * 1024;
     // serve the file in the "public" directory under `/public`
     Router::new()
         .nest_service("/pdf_api", ServeDir::new("pdf_api"))
-        .nest_service("/pdf_files", ServeDir::new("public"))
+        .nest_service("/pdf_files/pdf/:my_pdf_file", get(handle_pdf_request))
         .route("/pdf/:my_url_id", get(handle_request))
         .route("/pdf_viewer", get(handle_htmx))
         .route("/api/pdf", put(save_pdf))
-        .route("/api/pdf", post(save_and_update_pdf))
+        .route("/api/pdf", post(save_pdf))
+        .route("/api/upload", post(save_pdf))
         .route("/api/update/:my_pdf_name", get(handle_update))
-        .route("/api/upload/:my_pdf_name", get(upload_pdf_to_atomic))
-        .route("/api/download/:my_pdf_name", get(get_latest_file_handle))
         .layer(
             ServiceBuilder::new()
                 .layer(DefaultBodyLimit::max(max_body_size))
                 .into_inner(),
         )
         .layer(Extension(tera))
+        .layer(Extension(store_manager))
 }
 
 async fn serve(app: Router, port: u16) {

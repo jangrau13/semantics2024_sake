@@ -1,0 +1,217 @@
+//! The Hierarchy model describes how Resources are structured in a tree-like shape.
+//! It deals with authorization (read / write permissions, rights, grants)
+//! See
+
+use core::fmt;
+
+use crate::{agents::ForAgent, errors::AtomicResult, storelike::Query, urls, Resource, Storelike};
+
+#[derive(Debug)]
+pub enum Right {
+    /// Full read access to the resource and its children.
+    /// [urls::READ]
+    Read,
+    /// Full edit, update, destroy access to the resource and its children.
+    /// [urls::WRITE]
+    Write,
+    /// Create new children (append to tree)
+    /// [urls::APPEND]
+    Append,
+}
+
+impl fmt::Display for Right {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let str = match self {
+            Right::Read => urls::READ,
+            Right::Write => urls::WRITE,
+            Right::Append => urls::APPEND,
+        };
+        fmt.write_str(str)
+    }
+}
+
+/// Looks for children relations, adds to the resource. Performs a Query, might be expensive.
+pub fn add_children(store: &impl Storelike, resource: &mut Resource) -> AtomicResult<Resource> {
+    let results = store.query(&Query::new_prop_val(urls::PARENT, resource.get_subject()))?;
+    let mut children = results.subjects;
+    children.sort();
+    resource.set(urls::CHILDREN.into(), children.into(), store)?;
+    Ok(resource.to_owned())
+}
+
+/// Throws if not allowed.
+/// Returns string with explanation if allowed.
+pub fn check_write(
+    store: &impl Storelike,
+    resource: &Resource,
+    for_agent: &ForAgent,
+) -> AtomicResult<String> {
+    check_rights(store, resource, for_agent, Right::Write)
+}
+
+/// Does the Agent have the right to read / view the properties of the selected resource, or any of its parents?
+/// Throws if not allowed.
+/// Returns string with explanation if allowed.
+pub fn check_read(
+    store: &impl Storelike,
+    resource: &Resource,
+    for_agent: &ForAgent,
+) -> AtomicResult<String> {
+    check_rights(store, resource, for_agent, Right::Read)
+}
+
+/// Does the Agent have the right to _append_ to its parent?
+/// This checks the `append` rights, and if that fails, checks the `write` right.
+/// Throws if not allowed.
+/// Returns string with explanation if allowed.
+#[tracing::instrument(skip(store), level = "debug")]
+pub fn check_append(
+    store: &impl Storelike,
+    resource: &Resource,
+    for_agent: &ForAgent,
+) -> AtomicResult<String> {
+    match resource.get_parent(store) {
+        Ok(parent) => {
+            if let Ok(msg) = check_rights(store, &parent, for_agent, Right::Append) {
+                Ok(msg)
+            } else {
+                check_rights(store, resource, for_agent, Right::Write)
+            }
+        }
+        Err(e) => {
+            if resource
+                .get_classes(store)?
+                .iter()
+                .map(|c| c.subject.clone())
+                .collect::<String>()
+                .contains(urls::DRIVE)
+            {
+                Ok(String::from("Drive without a parent can be created"))
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
+/// Recursively checks a Resource and its Parents for rights.
+/// Throws if not allowed.
+/// Returns string with explanation if allowed.
+#[tracing::instrument(skip(store, resource))]
+pub fn check_rights(
+    store: &impl Storelike,
+    resource: &Resource,
+    for_agent_enum: &ForAgent,
+    right: Right,
+) -> AtomicResult<String> {
+    if for_agent_enum == &ForAgent::Sudo {
+        return Ok("Sudo has root access, and can edit anything.".into());
+    }
+    let for_agent = for_agent_enum.to_string();
+    if resource.get_subject() == &for_agent {
+        return Ok("Agents can always edit themselves or their children.".into());
+    }
+    if let Ok(server_agent) = store.get_default_agent() {
+        if server_agent.subject == for_agent {
+            return Ok("Server agent has root access, and can edit anything.".into());
+        }
+    }
+
+    // Handle Commits.
+    if let Ok(commit_subject) = resource.get(urls::SUBJECT) {
+        return match right {
+            Right::Read => {
+                // Commits can be read when their subject / target is readable.
+                let target = store.get_resource(&commit_subject.to_string())?;
+                check_rights(store, &target, for_agent_enum, right)
+            }
+            Right::Write => Err("Commits cannot be edited.".into()),
+            Right::Append => Err("Commits cannot have children, you cannot Append to them.".into()),
+        };
+    }
+
+    // Check if the resource's rights explicitly refers to the agent or the public agent
+    if let Ok(arr_val) = resource.get(&right.to_string()) {
+        for s in arr_val.to_subjects(None)? {
+            match s.as_str() {
+                urls::PUBLIC_AGENT => {
+                    return Ok(format!(
+                        "PublicAgent has been granted rights in {}",
+                        resource.get_subject()
+                    ))
+                }
+                agent => {
+                    if agent == for_agent {
+                        return Ok(format!(
+                            "Right has been explicitly set in {}",
+                            resource.get_subject()
+                        ));
+                    }
+                }
+            };
+        }
+    }
+
+    // Try the parents recursively
+    if let Ok(parent) = resource.get_parent(store) {
+        check_rights(store, &parent, for_agent_enum, right)
+    } else {
+        if for_agent_enum == &ForAgent::Public {
+            // resource has no parent and agent is not in rights array - check fails
+            let action = match right {
+                Right::Read => "readable",
+                Right::Write => "editable",
+                Right::Append => "appendable",
+            };
+            return Err(crate::errors::AtomicError::unauthorized(format!(
+                "This resource is not publicly {}. Try signing in",
+                action,
+            )));
+        }
+        // resource has no parent and agent is not in rights array - check fails
+        Err(crate::errors::AtomicError::unauthorized(format!(
+            "No {} right has been found for {} in this resource or its parents",
+            right, for_agent
+        )))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    // use super::*;
+    use crate::{datatype::DataType, Storelike, Value};
+
+    // TODO: Add tests for:
+    // - basic check_write (should be false for newly created agent)
+    // - Malicious Commit (which grants itself write rights)
+
+    #[test]
+    fn authorization() {
+        let store = crate::Store::init().unwrap();
+        store.populate().unwrap();
+        // let agent = store.create_agent(Some("test_actor")).unwrap();
+        let subject = "https://localhost/new_thing";
+        let mut commitbuilder_1 = crate::commit::CommitBuilder::new(subject.into());
+        let property = crate::urls::DESCRIPTION;
+        let value = Value::new("Some value", &DataType::Markdown).unwrap();
+        commitbuilder_1.set(property.into(), value);
+        // let mut commitbuilder_2 = commitbuilder_1.clone();
+        // let commit_1 = commitbuilder_1.sign(&agent, &store).unwrap();
+        // Should fail if there is no self_url set in the store, and no parent in the commit
+        // TODO: FINISH THIS
+        // commit_1.apply_opts(&store, true, true, true, true).unwrap_err();
+        // commitbuilder_2.set(crate::urls::PARENT.into(), Value::AtomicUrl(crate::urls::AGENT.into()));
+        // let commit_2 = commitbuilder_2.sign(&agent, &store).unwrap();
+
+        // let resource = store.get_resource(&subject).unwrap();
+        // assert!(resource.get(property).unwrap().to_string() == value.to_string());
+    }
+
+    #[test]
+    fn display_right() {
+        let read = super::Right::Read;
+        assert_eq!(read.to_string(), super::urls::READ);
+        let write = super::Right::Write;
+        assert_eq!(write.to_string(), super::urls::WRITE);
+    }
+}

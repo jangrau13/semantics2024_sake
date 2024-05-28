@@ -27,3 +27,8 @@ scraper = "0.19.0"
 atomic_lib = "0.37.0"
 lopdf = "0.32.0"
 reqwest = { version = "0.12.4", features = ["multipart"] }
+tempfile = "3.10.1"
+
+
+[patch.crates-io]
+atomic_lib = { path = "atomic_lib-0.37.0" }

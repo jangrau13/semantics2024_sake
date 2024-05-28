@@ -196,7 +196,7 @@
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); /* Add a subtle shadow for depth */
         }
 
-        .wiserSearchInput:hover{
+        .wiserSearchInput:hover {
             border-color: #007BFF; /* Change border color on focus */
             box-shadow: 0 2px 5px rgba(0, 123, 255, 0.5); /* Add shadow on focus */
             outline: none; /* Remove default outline */
@@ -236,6 +236,12 @@
                 </button>
                 <button id="syncPDF">Sync PDF with KG</button>
                 <button id="editMode">Toggle Editor Mode</button>
+                <div>
+                    <button id="uploadPDFButton">
+                        <span>Open PDF</span>
+                    </button>
+                    <input accept="application/pdf" id="pdfInput" style="display: none;" type="file">
+                </div>
             </div>
             <div class="button-container">
                 <div id="scaleSelectContainer">
@@ -363,17 +369,7 @@
                     <span data-l10n-id="pdfjs-scroll-vertical-button-label">Vertical Scrolling</span>
                 </button>
             </div>
-            <div class="button-container">
-                <button
-                        data-l10n-id="pdfjs-editor-highlight-show-all-button" id="editorHighlightShowAll"
-                        tabindex="102">Toggle Annotations
-                </button>
-            </div>
         </div>
-        <button data-l10n-id="pdfjs-open-button" id="pdf_open" tabindex="43"
-                title="Open">
-            <span data-l10n-id="pdfjs-open-button-label">Open PDF</span>
-        </button>
     </div>
     <div id="fragment-container">
         <!-- Button to load content from viewer_fragment.html -->
@@ -427,6 +423,60 @@
             mode: currentMode,
         });
     });
+
+    document.getElementById("uploadPDFButton").addEventListener('click', () => {
+        document.getElementById("pdfInput").click();
+    });
+
+    document.getElementById("pdfInput").addEventListener('change', (event) => {
+        const file = event.target.files[0];
+
+        if (file && file.type === "application/pdf") {
+            const formData = new FormData();
+            const originalFileName = file.name;
+            const slugifiedFileName = sluggify(originalFileName);
+
+            formData.append('file', file, slugifiedFileName);
+
+            fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.text())
+                .then(data => {
+                    if (data) {
+                        console.log("data", data)
+                        const filenameWithoutExtension = slugifiedFileName.replace('.pdf', '');
+                        window.location.href = `/pdf/${filenameWithoutExtension}`;
+                    } else {
+                        alert('Failed to upload PDF');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred while uploading the PDF');
+                });
+        } else {
+            alert('Please select a PDF file.');
+        }
+    });
+
+    function sluggify(filename) {
+        const extension = filename.split('.').pop();
+        const name = filename.substring(0, filename.lastIndexOf('.'));
+
+        const slugifiedName = name
+            .toString()
+            .toLowerCase()
+            .replace(/\s+/g, '-')           // Replace spaces with -
+            .replace(/[^\w\-]+/g, '')       // Remove all non-word chars
+            .replace(/\-\-+/g, '-')         // Replace multiple - with single -
+            .replace(/^-+/, '')             // Trim - from start of text
+            .replace(/-+$/, '');            // Trim - from end of text
+
+        return `${slugifiedName}.${extension}`;
+    }
+
     document.getElementById("syncPDF").addEventListener('click', (event) => {
         // Get the current window location
         const currentLocation = window.location.href;
@@ -456,10 +506,6 @@
     });
 
     function downloadKnowledge() {
-        //save PDF first before
-        alert("You need to save the PDF first to not loose data")
-        const downloadButton = document.getElementById("download")
-        downloadButton.click()
         window.wiserEventBus.emit('downloadKnowledge', {
             please: 'now'
         });
@@ -469,10 +515,10 @@
         })
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function () {
         const buttonContainer = document.querySelector('#right-sidebar .button-container');
 
-        buttonContainer.addEventListener('click', function(event) {
+        buttonContainer.addEventListener('click', function (event) {
             if (event.target.tagName === 'BUTTON') {
                 // Remove the highlighted class from all buttons
                 const buttons = buttonContainer.querySelectorAll('button');
