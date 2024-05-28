@@ -28,6 +28,17 @@ atomic_lib = "0.37.0"
 lopdf = "0.32.0"
 reqwest = { version = "0.12.4", features = ["multipart"] }
 tempfile = "3.10.1"
+shuttle-axum = "0.45.0"
+shuttle-runtime = "0.45.0"
+shuttle-shared-db = { version = "0.45.0", features = ["postgres", "sqlx"] }
+sqlx = { version = "0.7.2", features = ["runtime-tokio-rustls", "macros", "chrono", "migrate"] }
+axum-extra = { version = "0.9.2", features = ["cookie-private"] }
+oauth2 = "4.4.1"
+time = "0.3.36"
+aes-gcm = "0.10.3"
+rand = "0.9.0-alpha.1"
+shuttle = "0.7.0"
+thiserror = "1.0.57"
 
 
 [patch.crates-io]

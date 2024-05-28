@@ -775,7 +775,7 @@ const defaultOptions = {
     kind: OptionKind.WORKER
   },
   workerSrc: {
-    value: "/pdf_api/js/pdf.worker.mjs",
+    value: "/v1/api/pdf_api/js/pdf.worker.mjs",
     kind: OptionKind.WORKER
   }
 };
@@ -3630,7 +3630,7 @@ function saveToServer(blob, filename, savingDone) {
   console.log(`Saving ${filename} to server...`);
   const formData = new FormData();
   formData.append('file', blob, filename);
-  fetch('/api/pdf', {
+  fetch('/v1/api/pdf', {
     method,
     body: formData
   }).then(response => {
@@ -10036,7 +10036,7 @@ class PDFViewer {
   #scaleTimeoutId = null;
   #textLayerMode = TextLayerMode.ENABLE;
   constructor(options) {
-    const viewerVersion = "4.3.97";
+    const viewerVersion = "4.3.98";
     if (version !== viewerVersion) {
       throw new Error(`The API version "${version}" does not match the Viewer version "${viewerVersion}".`);
     }
@@ -12458,7 +12458,7 @@ const PDFViewerApplication = {
     const params = parseQueryString(queryString);
     const pdfID = document.getElementById("pdf_id").dataset.id;
     if (pdfID.length > 1) {
-      file = "/pdf_files/pdf/" + pdfID + ".pdf";
+      file = "/v1/api/pdf_files/pdf/" + pdfID + ".pdf";
       validateFileURL(file);
     }
     const fileInput = this._openFileInput = document.createElement("input");
@@ -14453,8 +14453,8 @@ async function handleUpdatePDFAfterKGAdd(data, document) {
 
 
 
-const pdfjsVersion = "4.3.97";
-const pdfjsBuild = "54b73147f";
+const pdfjsVersion = "4.3.98";
+const pdfjsBuild = "ffe2cabbe";
 const AppConstants = {
   LinkTarget: LinkTarget,
   RenderingStates: RenderingStates,
@@ -14610,7 +14610,7 @@ function webViewerLoad() {
 }
 document.blockUnblockOnload?.(true);
 if (document.readyState === "interactive" || document.readyState === "complete") {
-  window.myAtomicWorker = new Worker("/pdf_api/js/atomic.worker.js");
+  window.myAtomicWorker = new Worker("/v1/api/pdf_api/js/atomic.worker.js");
   window.WiserEventBus = web_WiserEventBus;
   webViewerLoad();
 } else {

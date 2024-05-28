@@ -373,7 +373,7 @@
     </div>
     <div id="fragment-container">
         <!-- Button to load content from viewer_fragment.html -->
-        <button hx-get="/pdf_viewer" hx-target="#fragment-container" hx-trigger="load">
+        <button hx-get="/v1/api/pdf_viewer" hx-target="#fragment-container" hx-trigger="load">
             Load Content
         </button>
         <!-- Container where the fragment will be loaded -->
@@ -438,7 +438,7 @@
 
             formData.append('file', file, slugifiedFileName);
 
-            fetch('/api/upload', {
+            fetch('/v1/api/upload', {
                 method: 'POST',
                 body: formData
             })
@@ -447,7 +447,7 @@
                     if (data) {
                         console.log("data", data)
                         const filenameWithoutExtension = slugifiedFileName.replace('.pdf', '');
-                        window.location.href = `/pdf/${filenameWithoutExtension}`;
+                        window.location.href = `/v1/api/pdf/${filenameWithoutExtension}`;
                     } else {
                         alert('Failed to upload PDF');
                     }
@@ -485,7 +485,7 @@
         const pdfUrl = currentLocation.substring(currentLocation.lastIndexOf('/') + 1);
 
         // Construct the API URL
-        const apiUrl = `/api/update/${pdfUrl}`;
+        const apiUrl = `/v1/api/update/${pdfUrl}`;
 
         // Make a GET request to the constructed API URL
         fetch(apiUrl, {
@@ -495,10 +495,10 @@
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
                 }
-                return response.json();
+                return response.text();
             })
             .then(data => {
-                alert("Syncing was successful")
+                alert("Syncing was successful", data)
             })
             .catch(error => {
                 console.error('There has been a problem with your fetch operation:', error);

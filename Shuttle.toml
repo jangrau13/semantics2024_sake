@@ -1,0 +1,2 @@
+name = "wiser-pdf-annotator"
+assets = ["pdf_api/*"]
