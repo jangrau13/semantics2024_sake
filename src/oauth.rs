@@ -6,6 +6,7 @@ use axum::{
     response::{IntoResponse, Redirect},
     Extension,
 };
+use axum::extract::Host;
 use axum::middleware::Next;
 use axum::response::Response;
 use axum_extra::extract::cookie::{Cookie, PrivateCookieJar};
@@ -110,7 +111,7 @@ pub async fn wiser_callback(
         .execute(&state.db)
         .await.unwrap();
 
-    Ok((jar.add(cookie), Redirect::to("/v1/api/pdf/gri")))
+    Ok((jar.add(cookie), Redirect::to("/v1/api/pdf/ghg")))
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -125,45 +126,50 @@ pub struct UserProfile {
 }
 
 pub async fn check_authenticated(
+    Host(host): Host,
     State(state): State<AppState>,
     jar: PrivateCookieJar,
     mut request: Request,
     next: Next,
 ) -> Result<Response, ApiError> {
-    println!("checking authenticated");
-    // Extract the session ID cookie
-    if let Some(cookie) = jar.get("sid") {
-        // Validate the session ID against the database
-        let email: Option<String> = sqlx::query_scalar(
-            "SELECT
+    let is_localhost = host.starts_with("localhost") || host.starts_with("127.0.0.1");
+    if (is_localhost) {
+        Ok(next.run(request).await)
+    } else {
+        // Extract the session ID cookie
+        if let Some(cookie) = jar.get("sid") {
+            // Validate the session ID against the database
+            let email: Option<String> = sqlx::query_scalar(
+                "SELECT
                     users.email
                 FROM sessions
                 LEFT JOIN users ON sessions.user_id = users.id
                 WHERE sessions.session_id = $1
                 LIMIT 1",
-        )
-            .bind(cookie.value())
-            .fetch_optional(&state.db)
-            .await
-            .map_err(|_| ApiError::Unauthorized)?;
+            )
+                .bind(cookie.value())
+                .fetch_optional(&state.db)
+                .await
+                .map_err(|_| ApiError::Unauthorized)?;
 
-        // If a valid session is found, proceed to the next middleware/handler
-        if let Some(email) = email {
-            request.extensions_mut().insert(UserProfile {
-                email,
-                preferred_username: None,
-                given_name: None,
-                family_name: None,
-                atomic_agent: None,
-                atomic_key: None,
-                atomic_nonce: None,
-            });
-            return Ok(next.run(request).await);
+            // If a valid session is found, proceed to the next middleware/handler
+            if let Some(email) = email {
+                request.extensions_mut().insert(UserProfile {
+                    email,
+                    preferred_username: None,
+                    given_name: None,
+                    family_name: None,
+                    atomic_agent: None,
+                    atomic_key: None,
+                    atomic_nonce: None,
+                });
+                return Ok(next.run(request).await);
+            }
         }
-    }
 
-    // If no valid session is found, return an unauthorized error
-    Err(ApiError::Unauthorized)
+        // If no valid session is found, return an unauthorized error
+        Err(ApiError::Unauthorized)
+    }
 }
 
 #[axum::async_trait]

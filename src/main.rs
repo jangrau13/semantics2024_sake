@@ -4,7 +4,7 @@ use std::error::Error;
 use std::string::String;
 use std::fs::{File};
 use std::io::{Read, Write};
-use axum::{routing::{get}, Router, Extension, middleware};
+use axum::{routing::{get}, Router, Extension, middleware, Json};
 use std::ops::Deref;
 use std::path::{PathBuf};
 use std::sync::Arc;
@@ -16,7 +16,7 @@ use axum::{
     extract::Multipart,
     http::StatusCode,
 };
-use axum::extract::{DefaultBodyLimit, FromRef};
+use axum::extract::{DefaultBodyLimit, FromRef, Host, State};
 use tera::
 {
     Tera, Context,
@@ -51,6 +51,7 @@ use shuttle_runtime::SecretStore;
 use sqlx::PgPool;
 use axum_extra::extract::cookie::Key;
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
+use serde::Serialize;
 
 pub mod errors;
 pub mod oauth;
@@ -60,6 +61,8 @@ mod decrypter;
 struct AtomicStruct {
     auth_header: String,
     atomic_secret_key: String,
+    local_auth_header: String,
+    local_atomic_secret_key: String,
 }
 
 #[derive(Clone)]
@@ -68,6 +71,10 @@ pub struct AppState {
     ctx: Client,
     key: Key,
     wiser_key: String,
+    atomic_private_key: String,
+    atomic_subject: String,
+    local_atomic_private_key: String,
+    local_atomic_subject: String,
 }
 
 impl FromRef<AppState> for Key {
@@ -98,6 +105,12 @@ async fn axum(
     let shared_tera = Arc::new(tera);
     let auth_header_string = secrets.get("ATOMIC_AUTH_HEADER").unwrap().clone();
     let secret_key_string = secrets.get("ATOMIC_AGENT_SECRET_KEY").unwrap().clone();
+    let atomic_private_key = secrets.get("ATOMIC_AGENT_PRIVATE_KEY").unwrap().clone();
+    let atomic_subject = secrets.get("ATOMIC_AGENT_SUBJECT").unwrap().clone();
+    let local_auth_header_string = secrets.get("LOCAL_ATOMIC_AUTH_HEADER").unwrap().clone();
+    let local_secret_key_string = secrets.get("LOCAL_ATOMIC_AGENT_SECRET_KEY").unwrap().clone();
+    let local_atomic_private_key = secrets.get("LOCAL_ATOMIC_AGENT_PRIVATE_KEY").unwrap().clone();
+    let local_atomic_subject = secrets.get("LOCAL_ATOMIC_AGENT_SUBJECT").unwrap().clone();
     let oauth_id = secrets.get("KEYCLOAK_OAUTH_CLIENT_ID").unwrap();
     let oauth_secret = secrets.get("KEYCLOAK_OAUTH_CLIENT_SECRET").unwrap();
     let wiser_key = secrets.get("WISER_SECRET_KEY").unwrap();
@@ -109,6 +122,10 @@ async fn axum(
         ctx,
         key: Key::generate(),
         wiser_key,
+        atomic_private_key,
+        atomic_subject,
+        local_atomic_private_key,
+        local_atomic_subject,
     };
 
     let oauth_client = build_oauth_client(oauth_id.clone(), oauth_secret.clone());
@@ -118,6 +135,8 @@ async fn axum(
     let atomic_struct = AtomicStruct {
         auth_header: auth_header_string,
         atomic_secret_key: secret_key_string,
+        local_auth_header: local_auth_header_string,
+        local_atomic_secret_key: local_secret_key_string,
     };
 
     // Wrap the AtomicStruct in an Arc
@@ -175,12 +194,21 @@ async fn process_multipart(mut multipart: Multipart) -> Result<(String, Vec<u8>)
 async fn save_pdf(
     Extension(manager): Extension<Arc<SingletonManager>>,
     Extension(atomic_struct): Extension<Arc<AtomicStruct>>,
+    Host(host): Host,
     multipart: Multipart,
 ) -> impl IntoResponse {
-    let my_atomic_store = get_local_atomic_store(manager, atomic_struct.atomic_secret_key.as_str()).await.unwrap();
+    let is_localhost = host.starts_with("localhost") || host.starts_with("127.0.0.1");
+
+    let mut atomic_secret_key = atomic_struct.atomic_secret_key.as_str();
+    let mut atomic_auth_hedaer = atomic_struct.auth_header.as_str();
+    if is_localhost {
+        atomic_secret_key = atomic_struct.local_atomic_secret_key.as_str();
+        atomic_auth_hedaer = atomic_struct.local_auth_header.as_str();
+    }
+    let my_atomic_store = get_local_atomic_store(manager, atomic_secret_key).await.unwrap();
     match process_multipart(multipart).await {
         Ok((filename, pdf_data)) => {
-            match upload_file_to_atomic(filename, &my_atomic_store, pdf_data, atomic_struct.auth_header.as_str(), atomic_struct.atomic_secret_key.as_str()).await {
+            match upload_file_to_atomic(filename, &my_atomic_store, pdf_data, atomic_auth_hedaer, atomic_secret_key).await {
                 Ok(_) => (StatusCode::OK, "File uploaded successfully").into_response(),
                 Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Failed to upload file").into_response(),
             }
@@ -193,15 +221,23 @@ async fn handle_pdf_request(
     axum::extract::Path(my_pdf_file): axum::extract::Path<String>,
     Extension(manager): Extension<Arc<SingletonManager>>,
     Extension(atomic_struct): Extension<Arc<AtomicStruct>>,
+    Host(host): Host
 ) -> impl IntoResponse {
     // Remove the .pdf suffix
     let removed_file_ending = my_pdf_file.strip_suffix(".pdf").unwrap().to_string();
+    let is_localhost = host.starts_with("localhost") || host.starts_with("127.0.0.1");
 
+    let mut atomic_secret_key = atomic_struct.atomic_secret_key.as_str();
+    let mut atomic_auth_hedaer = atomic_struct.auth_header.as_str();
+    if is_localhost {
+        atomic_secret_key = atomic_struct.local_atomic_secret_key.as_str();
+        atomic_auth_hedaer = atomic_struct.local_auth_header.as_str();
+    }
     // Retrieve the atomic server
-    let my_atomic_server = get_local_atomic_store(manager, atomic_struct.atomic_secret_key.as_str()).await.unwrap();
+    let my_atomic_server = get_local_atomic_store(manager, atomic_secret_key).await.unwrap();
 
     // Get the latest file
-    match get_latest_file(&removed_file_ending, &my_atomic_server, atomic_struct.auth_header.as_str(), atomic_struct.atomic_secret_key.as_str()).await {
+    match get_latest_file(&removed_file_ending, &my_atomic_server, atomic_auth_hedaer, atomic_secret_key).await {
         Ok(mut file) => {
             let mut buffer = Vec::new();
             file.read_to_end(&mut buffer).unwrap();
@@ -302,6 +338,7 @@ async fn handle_request(
     Extension(tera): Extension<Arc<Tera>>,
     Extension(manager): Extension<Arc<SingletonManager>>,
     Extension(atomic_struct): Extension<Arc<AtomicStruct>>,
+    Host(host): Host,
     axum::extract::Path(my_url_id): axum::extract::Path<String>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
@@ -310,7 +347,15 @@ async fn handle_request(
     //response_headers.insert("Cache-Control", HeaderValue::from_static("no-store, no-cache, must-revalidate, proxy-revalidate"));
     //response_headers.insert("Pragma", HeaderValue::from_static("no-cache"));
     //response_headers.insert("Expires", HeaderValue::from_static("0"));
-    let my_atomic_store = get_local_atomic_store(manager.clone(), atomic_struct.atomic_secret_key.as_str()).await.unwrap();
+    let is_localhost = host.starts_with("localhost") || host.starts_with("127.0.0.1");
+
+    let mut atomic_secret_key = atomic_struct.atomic_secret_key.as_str();
+    let mut atomic_auth_hedaer = atomic_struct.auth_header.as_str();
+    if is_localhost {
+        atomic_secret_key = atomic_struct.local_atomic_secret_key.as_str();
+        atomic_auth_hedaer = atomic_struct.local_auth_header.as_str();
+    }
+    let my_atomic_store = get_local_atomic_store(manager.clone(), atomic_secret_key).await.unwrap();
     match headers.get(axum::http::header::CONTENT_TYPE).and_then(|ct| ct.to_str().ok()) {
         Some(content_type) if matches!(
             content_type,
@@ -322,8 +367,8 @@ async fn handle_request(
         ) => {
             // we need to update the PDF according to the Atomic SST first
             let file_name = my_url_id.clone() + ".pdf";
-            let file = get_latest_file(&*my_url_id, &my_atomic_store, atomic_struct.auth_header.as_str(), atomic_struct.atomic_secret_key.as_str()).await.unwrap();
-            match update_pdf(file, &file_name, &my_atomic_store, atomic_struct.auth_header.as_str(), atomic_struct.atomic_secret_key.as_str()).await {
+            let file = get_latest_file(&*my_url_id, &my_atomic_store, atomic_auth_hedaer, atomic_secret_key).await.unwrap();
+            match update_pdf(file, &file_name, &my_atomic_store, atomic_auth_hedaer, atomic_secret_key).await {
                 Ok(_) => {
                     if let Some(output) = get_annotations(&my_url_id, content_type).await {
                         (response_headers, output.into_response())
@@ -355,14 +400,48 @@ async fn handle_htmx(Extension(tera): Extension<Arc<Tera>>,
     Html(tera.render("viewer_fragment.html", &context).expect("Failed to render template"))
 }
 
+#[derive(Serialize)]
+struct AtomicAgent {
+    key: String,
+    url: String,
+}
+
+async fn handle_get_my_agent(
+    State(state): State<AppState>,
+    Host(host): Host
+) -> Json<AtomicAgent> {
+    let mut key = state.atomic_private_key;
+    let mut url = state.atomic_subject;
+    let is_localhost = host.starts_with("localhost") || host.starts_with("127.0.0.1");
+
+    if is_localhost {
+        key = state.local_atomic_private_key;
+        url = state.local_atomic_subject;
+    }
+    let agent = AtomicAgent {
+        key,
+        url,
+    };
+    Json(agent)
+}
+
 async fn handle_update(
     Extension(manager): Extension<Arc<SingletonManager>>,
     Extension(atomic_struct): Extension<Arc<AtomicStruct>>,
+    Host(host): Host,
     axum::extract::Path(my_pdf_name): axum::extract::Path<String>,
 ) -> impl IntoResponse {
-    let my_atomic_store = get_local_atomic_store(manager, atomic_struct.atomic_secret_key.as_str()).await.unwrap();
-    let my_file = get_latest_file(&my_pdf_name, &my_atomic_store, atomic_struct.auth_header.as_str(), atomic_struct.atomic_secret_key.as_str()).await.unwrap();
-    match update_pdf(my_file, &my_pdf_name, &my_atomic_store, atomic_struct.auth_header.as_str(), atomic_struct.atomic_secret_key.as_str()).await {
+    let is_localhost = host.starts_with("localhost") || host.starts_with("127.0.0.1");
+
+    let mut atomic_secret_key = atomic_struct.atomic_secret_key.as_str();
+    let mut atomic_auth_hedaer = atomic_struct.auth_header.as_str();
+    if is_localhost {
+        atomic_secret_key = atomic_struct.local_atomic_secret_key.as_str();
+        atomic_auth_hedaer = atomic_struct.local_auth_header.as_str();
+    }
+    let my_atomic_store = get_local_atomic_store(manager, atomic_secret_key).await.unwrap();
+    let my_file = get_latest_file(&my_pdf_name, &my_atomic_store, atomic_auth_hedaer, atomic_secret_key).await.unwrap();
+    match update_pdf(my_file, &my_pdf_name, &my_atomic_store, atomic_auth_hedaer, atomic_secret_key).await {
         Ok(_) => StatusCode::OK,
         Err(err) => {
             eprintln!("Error updating PDF: {}", err); // Log the error
@@ -554,7 +633,7 @@ async fn upload_file_to_atomic(
 
             // Check the response
             if response.status().is_success() {
-                println!("File uploaded successfully");
+                //println!("File uploaded successfully");
                 return Ok(true);
             } else {
                 let error_text = response.text().await.unwrap();
@@ -761,6 +840,7 @@ fn setting_up_router(
         .route("/pdf", put(save_pdf))
         .route("/pdf", post(save_pdf))
         .route("/upload", post(save_pdf))
+        .route("/get_my_agent", get(handle_get_my_agent))
         .route("/update/:my_pdf_name", get(handle_update))
         .layer(
             ServiceBuilder::new()
@@ -780,15 +860,30 @@ fn setting_up_router(
         .with_state(state)
 }
 
-async fn homepage_handler(Extension(oauth_id): Extension<String>) -> Html<String> {
+async fn homepage_handler(
+    Extension(oauth_id): Extension<String>,
+    Host(host): Host,
+) -> Html<String> {
+    let is_localhost = host.starts_with("localhost") || host.starts_with("127.0.0.1");
 
-    Html(format!(
-        r#"
+    if is_localhost {
+        Html(format!(
+            r#"
+            <p>Welcome, localhost user!</p>
+            <a href="http://localhost:8080/login">
+                Login (Local)
+            </a>
+        "#
+        ))
+    } else {
+        Html(format!(
+            r#"
         <p>Welcome!</p>
         <a href="https://auth.wiser.ehealth.hevs.ch/realms/wiser/protocol/openid-connect/auth?scope=openid%20profile%20email&client_id={oauth_id}&response_type=code&redirect_uri=https://wiser-pdf-annotator.shuttleapp.rs/api/auth/wiser_callback">
             Login with Keycloak
         </a>
 
     "#
-    ))
+        ))
+    }
 }

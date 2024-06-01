@@ -1972,6 +1972,10 @@ class HighlightToolbar {
     this.#buttons.append(button);
   }
 }
+function getLastPartOfUrl(url) {
+  const parts = url.split('/');
+  return parts[parts.length - 1];
+}
 async function setupModal(selectedRange, selection, uiManager, myHide) {
   let currentMessage = null;
   const selectedText = selection.toString();
@@ -1982,7 +1986,7 @@ async function setupModal(selectedRange, selection, uiManager, myHide) {
     async render(myWorker) {
       const magicWord = 'magic_onSave_' + new Date().toISOString();
       const current_concept = document.getElementById("current-concept-holder").getAttribute("data-current-concept");
-      const renderURL = 'https://wiser-sp4.interactions.ics.unisg.ch/class/' + current_concept;
+      const renderURL = current_concept;
       appliedConcept = renderURL;
       myWorker.postMessage({
         type: 'createModal',
@@ -2004,6 +2008,7 @@ async function setupModal(selectedRange, selection, uiManager, myHide) {
             const scriptElement = document.createElement("script");
             scriptElement.type = "text/javascript";
             scriptElement.textContent = currentMessage.laScript;
+            console.log('adding la Script', currentMessage.laScript);
             document.body.appendChild(scriptElement);
           }
           resolve(container.outerHTML);
@@ -2021,14 +2026,36 @@ async function setupModal(selectedRange, selection, uiManager, myHide) {
         if (infoIndex === "https://wiser-sp4.interactions.ics.unisg.ch/property/wiser-id") {
           container.setId(importantInfo.value);
           container.setAttribute('data-wiser-potential-subject', potentialSubject);
-        } else {
-          const infoSpan = new RDFaElement('span').setAttribute('property', infoIndex).setTextContent(importantInfo.value);
+        } else if (infoIndex === "https://wiser-sp4.interactions.ics.unisg.ch/property/wiser-recommended" || infoIndex === "https://wiser-sp4.interactions.ics.unisg.ch/property/wiser-required") {
+          const infoSpan = new RDFaElement('span').setAttribute('property', infoIndex).setTextContent(importantInfo.checked);
           container.addChild(infoSpan);
+        } else if (infoIndex === "https://wiser-sp4.interactions.ics.unisg.ch/property/wiser-image") {
+          let dataImage = importantInfo.getAttribute('data-image');
+          let description = importantInfo.getAttribute('data-description');
+          let markdownImage = `![${description}](${dataImage})`;
+          let markdownVariable = markdownImage;
+          if (markdownVariable) {
+            const imageSpan = new RDFaElement('span').setAttribute('property', infoIndex).setTextContent(markdownVariable);
+            container.addChild(imageSpan);
+          }
+        } else {
+          if (importantInfo && importantInfo.value && importantInfo.value.length > 1) {
+            const infoSpan = new RDFaElement('span').setAttribute('property', infoIndex).setTextContent(importantInfo.value);
+            container.addChild(infoSpan);
+          }
         }
       }
+      let page = document.getElementById("pageNumber").value;
+      let pdf_name = getLastPartOfUrl(window.location.href);
+      const pdfSpan = new RDFaElement('span').setAttribute('property', 'https://wiser-sp4.interactions.ics.unisg.ch/property/has-pdf-id').setTextContent(pdf_name);
+      container.addChild(pdfSpan);
+      const numberSpan = new RDFaElement('span').setAttribute('property', 'https://wiser-sp4.interactions.ics.unisg.ch/property/pdf-page-number').setTextContent(page);
+      container.addChild(numberSpan);
+      let url = window.location.href + "#page=" + page;
+      const urlSpan = new RDFaElement('span').setAttribute('property', 'https://wiser-sp4.interactions.ics.unisg.ch/property/wiser-url').setTextContent(url);
+      container.addChild(urlSpan);
       rdfaBuilder.addElement(container);
       const builtHtml = rdfaBuilder.build();
-      console.log("adding knowledge", builtHtml);
       document.getElementById('rdfa-tmp-storage').setAttribute('data-user-input', builtHtml);
       if (selectedRange) {
         if (selection.rangeCount > 0) selection.removeAllRanges();
@@ -10886,7 +10913,7 @@ function getDocument(src) {
   }
   const docParams = {
     docId,
-    apiVersion: "4.3.98",
+    apiVersion: "4.3.99",
     data,
     password,
     disableAutoFetch,
@@ -12771,8 +12798,8 @@ class InternalRenderTask {
     }
   }
 }
-const version = "4.3.98";
-const build = "ffe2cabbe";
+const version = "4.3.99";
+const build = "8f618d720";
 
 ;// CONCATENATED MODULE: ./src/shared/scripting_utils.js
 function makeColorComp(n) {
@@ -13546,7 +13573,6 @@ class AnnotationElement {
       });
       const linkHeaderHTML = document.createElement("div");
       linkHeaderHTML.id = magicWord;
-      console.log('magicWord', magicWord);
       const linkHeaderSpan = document.createElement("a");
       linkHeaderSpan.setAttribute("href", resource);
       linkHeaderSpan.textContent = "please visit me at the KG";
@@ -13579,7 +13605,6 @@ class AnnotationElement {
       elements: [this]
     });
     let popup_render = popup.render();
-    console.log("I am now appinding this", popup_render);
     this.parent.div.append(popup_render);
     wiserEventBus.on(magicWord, msg => {
       const startTime = Date.now();
@@ -14803,7 +14828,6 @@ class PopupAnnotationElement extends AnnotationElement {
       element.addHighlightArea();
     }
     this.container.setAttribute("aria-controls", elementIds.map(id => `${AnnotationPrefix}${id}`).join(","));
-    console.log("returning container", this.container);
     return this.container;
   }
 }
@@ -19646,8 +19670,8 @@ class DrawLayer {
 
 
 
-const pdfjsVersion = "4.3.98";
-const pdfjsBuild = "ffe2cabbe";
+const pdfjsVersion = "4.3.99";
+const pdfjsBuild = "8f618d720";
 
 var __webpack_exports__AbortException = __webpack_exports__.AbortException;
 var __webpack_exports__AnnotationEditorLayer = __webpack_exports__.AnnotationEditorLayer;

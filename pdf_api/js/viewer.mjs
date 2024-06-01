@@ -10036,7 +10036,7 @@ class PDFViewer {
   #scaleTimeoutId = null;
   #textLayerMode = TextLayerMode.ENABLE;
   constructor(options) {
-    const viewerVersion = "4.3.98";
+    const viewerVersion = "4.3.99";
     if (version !== viewerVersion) {
       throw new Error(`The API version "${version}" does not match the Viewer version "${viewerVersion}".`);
     }
@@ -14415,12 +14415,10 @@ const WiserEventBus = {
 async function handleConceptButtons(data) {
   const buttonContainer = document.querySelector('.button-container.pdf_utils');
   if (buttonContainer) {
-    data.buttons.forEach(button => {
-      const tempContainer = document.createElement('div');
-      tempContainer.innerHTML = button.trim();
-      const btn = tempContainer.firstChild;
-      buttonContainer.appendChild(btn);
-    });
+    const tempContainer = document.createElement('div');
+    tempContainer.innerHTML = data.buttons.trim();
+    const btn = tempContainer.firstChild;
+    buttonContainer.appendChild(btn);
   } else {
     console.error("Button container not found");
   }
@@ -14453,8 +14451,8 @@ async function handleUpdatePDFAfterKGAdd(data, document) {
 
 
 
-const pdfjsVersion = "4.3.98";
-const pdfjsBuild = "ffe2cabbe";
+const pdfjsVersion = "4.3.99";
+const pdfjsBuild = "8f618d720";
 const AppConstants = {
   LinkTarget: LinkTarget,
   RenderingStates: RenderingStates,

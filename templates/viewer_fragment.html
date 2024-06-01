@@ -179,12 +179,12 @@
     <!-- Include HTMX -->
     <script src="https://unpkg.com/htmx.org"></script>
     <script>
-        function conceptButtonFunction(shortname, color) {
+        function conceptButtonFunction(shortname, color, fullUrl) {
             const pdfApp = window.PDFViewerApplication;
             if (!pdfApp) {
                 console.error('PDFViewerApplication is not available');
             } else {
-                document.getElementById("current-concept-holder").setAttribute("data-current-concept", shortname)
+                document.getElementById("current-concept-holder").setAttribute("data-current-concept", fullUrl)
                 pdfApp.eventBus.dispatch("switchannotationeditorparams", {
                     source: this,
                     type: 32,
