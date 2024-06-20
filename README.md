@@ -22,5 +22,5 @@ git push
 cd pdf_js
 gulp wiser
 cd ..
-cargo run
+cargo shuttle run --external
 ```
