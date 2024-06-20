@@ -2008,7 +2008,6 @@ async function setupModal(selectedRange, selection, uiManager, myHide) {
             const scriptElement = document.createElement("script");
             scriptElement.type = "text/javascript";
             scriptElement.textContent = currentMessage.laScript;
-            console.log('adding la Script', currentMessage.laScript);
             document.body.appendChild(scriptElement);
           }
           resolve(container.outerHTML);
@@ -10913,7 +10912,7 @@ function getDocument(src) {
   }
   const docParams = {
     docId,
-    apiVersion: "4.3.99",
+    apiVersion: "4.3.100",
     data,
     password,
     disableAutoFetch,
@@ -12798,8 +12797,8 @@ class InternalRenderTask {
     }
   }
 }
-const version = "4.3.99";
-const build = "8f618d720";
+const version = "4.3.100";
+const build = "0cd5252aa";
 
 ;// CONCATENATED MODULE: ./src/shared/scripting_utils.js
 function makeColorComp(n) {
@@ -19670,8 +19669,8 @@ class DrawLayer {
 
 
 
-const pdfjsVersion = "4.3.99";
-const pdfjsBuild = "8f618d720";
+const pdfjsVersion = "4.3.100";
+const pdfjsBuild = "0cd5252aa";
 
 var __webpack_exports__AbortException = __webpack_exports__.AbortException;
 var __webpack_exports__AnnotationEditorLayer = __webpack_exports__.AnnotationEditorLayer;

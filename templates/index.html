@@ -592,10 +592,16 @@
         window.wiserEventBus.emit('downloadKnowledge', {
             please: 'now'
         });
-        window.wiserEventBus.on('knowledgeConfirmation', (msg) => {
-            let prefix = msg.updatedList ? msg.updatedList.length : "no"
-            alert(prefix + " element(s) were updated")
-        })
+
+        const knowledgeConfirmationListener = (msg) => {
+            let prefix = msg.updatedList ? msg.updatedList.length : "no";
+            alert(prefix + " element(s) were updated");
+
+            // Remove the listener after the alert
+            window.wiserEventBus.off('knowledgeConfirmation', knowledgeConfirmationListener);
+        };
+
+        window.wiserEventBus.on('knowledgeConfirmation', knowledgeConfirmationListener);
     }
 
     document.addEventListener('DOMContentLoaded', function () {
