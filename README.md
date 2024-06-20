@@ -19,6 +19,7 @@ git push
 ## How to run
 
 Prerequisite: [Shuttle](https://docs.shuttle.rs/getting-started/installation)
+and a SECRETS.toml
 
 1. run 
 ```
