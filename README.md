@@ -17,6 +17,9 @@ git push
 ```
 
 ## How to run
+
+Prerequisite: [Shuttle](https://docs.shuttle.rs/getting-started/installation)
+
 1. run 
 ```
 cd pdf_js
