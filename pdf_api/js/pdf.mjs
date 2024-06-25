@@ -20,8 +20,391 @@
  * JavaScript code in this page
  */
 
-/******/ // The require scope
-/******/ var __webpack_require__ = {};
+/******/ var __webpack_modules__ = ({
+
+/***/ 734:
+/***/ (function(module, exports, __webpack_require__) {
+
+var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_RESULT__;(function (root, factory) {
+  if (true) {
+    !(__WEBPACK_AMD_DEFINE_FACTORY__ = (factory),
+		__WEBPACK_AMD_DEFINE_RESULT__ = (typeof __WEBPACK_AMD_DEFINE_FACTORY__ === 'function' ?
+		(__WEBPACK_AMD_DEFINE_FACTORY__.call(exports, __webpack_require__, exports, module)) :
+		__WEBPACK_AMD_DEFINE_FACTORY__),
+		__WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
+  } else {}
+})(this, function (root) {
+  'use strict';
+
+  var merge = function (target) {
+    var i = 1;
+    var length = arguments.length;
+    var key;
+    for (; i < length; i++) {
+      for (key in arguments[i]) {
+        if (Object.prototype.hasOwnProperty.call(arguments[i], key)) {
+          target[key] = arguments[i][key];
+        }
+      }
+    }
+    return target;
+  };
+  var defaults = {
+    template: '[%t] %l:',
+    levelFormatter: function (level) {
+      return level.toUpperCase();
+    },
+    nameFormatter: function (name) {
+      return name || 'root';
+    },
+    timestampFormatter: function (date) {
+      return date.toTimeString().replace(/.*(\d{2}:\d{2}:\d{2}).*/, '$1');
+    },
+    format: undefined
+  };
+  var loglevel;
+  var configs = {};
+  var reg = function (rootLogger) {
+    if (!rootLogger || !rootLogger.getLogger) {
+      throw new TypeError('Argument is not a root logger');
+    }
+    loglevel = rootLogger;
+  };
+  var apply = function (logger, config) {
+    if (!logger || !logger.setLevel) {
+      throw new TypeError('Argument is not a logger');
+    }
+    var originalFactory = logger.methodFactory;
+    var name = logger.name || '';
+    var parent = configs[name] || configs[''] || defaults;
+    function methodFactory(methodName, logLevel, loggerName) {
+      var originalMethod = originalFactory(methodName, logLevel, loggerName);
+      var options = configs[loggerName] || configs[''];
+      var hasTimestamp = options.template.indexOf('%t') !== -1;
+      var hasLevel = options.template.indexOf('%l') !== -1;
+      var hasName = options.template.indexOf('%n') !== -1;
+      return function () {
+        var content = '';
+        var length = arguments.length;
+        var args = Array(length);
+        var key = 0;
+        for (; key < length; key++) {
+          args[key] = arguments[key];
+        }
+        if (name || !configs[loggerName]) {
+          var timestamp = options.timestampFormatter(new Date());
+          var level = options.levelFormatter(methodName);
+          var lname = options.nameFormatter(loggerName);
+          if (options.format) {
+            content += options.format(level, lname, timestamp);
+          } else {
+            content += options.template;
+            if (hasTimestamp) {
+              content = content.replace(/%t/, timestamp);
+            }
+            if (hasLevel) content = content.replace(/%l/, level);
+            if (hasName) content = content.replace(/%n/, lname);
+          }
+          if (args.length && typeof args[0] === 'string') {
+            args[0] = content + ' ' + args[0];
+          } else {
+            args.unshift(content);
+          }
+        }
+        originalMethod.apply(undefined, args);
+      };
+    }
+    if (!configs[name]) {
+      logger.methodFactory = methodFactory;
+    }
+    config = config || {};
+    if (config.template) config.format = undefined;
+    configs[name] = merge({}, parent, config);
+    logger.setLevel(logger.getLevel());
+    if (!loglevel) {
+      logger.warn('It is necessary to call the function reg() of loglevel-plugin-prefix before calling apply. From the next release, it will throw an error. See more: https://github.com/kutuluk/loglevel-plugin-prefix/blob/master/README.md');
+    }
+    return logger;
+  };
+  var api = {
+    reg: reg,
+    apply: apply
+  };
+  var save;
+  if (root) {
+    save = root.prefix;
+    api.noConflict = function () {
+      if (root.prefix === api) {
+        root.prefix = save;
+      }
+      return api;
+    };
+  }
+  return api;
+});
+
+/***/ }),
+
+/***/ 912:
+/***/ (function(module, exports, __webpack_require__) {
+
+var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_RESULT__;(function (root, definition) {
+  "use strict";
+
+  if (true) {
+    !(__WEBPACK_AMD_DEFINE_FACTORY__ = (definition),
+		__WEBPACK_AMD_DEFINE_RESULT__ = (typeof __WEBPACK_AMD_DEFINE_FACTORY__ === 'function' ?
+		(__WEBPACK_AMD_DEFINE_FACTORY__.call(exports, __webpack_require__, exports, module)) :
+		__WEBPACK_AMD_DEFINE_FACTORY__),
+		__WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
+  } else {}
+})(this, function () {
+  "use strict";
+
+  var noop = function () {};
+  var undefinedType = "undefined";
+  var isIE = typeof window !== undefinedType && typeof window.navigator !== undefinedType && /Trident\/|MSIE /.test(window.navigator.userAgent);
+  var logMethods = ["trace", "debug", "info", "warn", "error"];
+  var _loggersByName = {};
+  var defaultLogger = null;
+  function bindMethod(obj, methodName) {
+    var method = obj[methodName];
+    if (typeof method.bind === 'function') {
+      return method.bind(obj);
+    } else {
+      try {
+        return Function.prototype.bind.call(method, obj);
+      } catch (e) {
+        return function () {
+          return Function.prototype.apply.apply(method, [obj, arguments]);
+        };
+      }
+    }
+  }
+  function traceForIE() {
+    if (console.log) {
+      if (console.log.apply) {
+        console.log.apply(console, arguments);
+      } else {
+        Function.prototype.apply.apply(console.log, [console, arguments]);
+      }
+    }
+    if (console.trace) console.trace();
+  }
+  function realMethod(methodName) {
+    if (methodName === 'debug') {
+      methodName = 'log';
+    }
+    if (typeof console === undefinedType) {
+      return false;
+    } else if (methodName === 'trace' && isIE) {
+      return traceForIE;
+    } else if (console[methodName] !== undefined) {
+      return bindMethod(console, methodName);
+    } else if (console.log !== undefined) {
+      return bindMethod(console, 'log');
+    } else {
+      return noop;
+    }
+  }
+  function replaceLoggingMethods() {
+    var level = this.getLevel();
+    for (var i = 0; i < logMethods.length; i++) {
+      var methodName = logMethods[i];
+      this[methodName] = i < level ? noop : this.methodFactory(methodName, level, this.name);
+    }
+    this.log = this.debug;
+    if (typeof console === undefinedType && level < this.levels.SILENT) {
+      return "No console available for logging";
+    }
+  }
+  function enableLoggingWhenConsoleArrives(methodName) {
+    return function () {
+      if (typeof console !== undefinedType) {
+        replaceLoggingMethods.call(this);
+        this[methodName].apply(this, arguments);
+      }
+    };
+  }
+  function defaultMethodFactory(methodName, _level, _loggerName) {
+    return realMethod(methodName) || enableLoggingWhenConsoleArrives.apply(this, arguments);
+  }
+  function Logger(name, factory) {
+    var self = this;
+    var inheritedLevel;
+    var defaultLevel;
+    var userLevel;
+    var storageKey = "loglevel";
+    if (typeof name === "string") {
+      storageKey += ":" + name;
+    } else if (typeof name === "symbol") {
+      storageKey = undefined;
+    }
+    function persistLevelIfPossible(levelNum) {
+      var levelName = (logMethods[levelNum] || 'silent').toUpperCase();
+      if (typeof window === undefinedType || !storageKey) return;
+      try {
+        window.localStorage[storageKey] = levelName;
+        return;
+      } catch (ignore) {}
+      try {
+        window.document.cookie = encodeURIComponent(storageKey) + "=" + levelName + ";";
+      } catch (ignore) {}
+    }
+    function getPersistedLevel() {
+      var storedLevel;
+      if (typeof window === undefinedType || !storageKey) return;
+      try {
+        storedLevel = window.localStorage[storageKey];
+      } catch (ignore) {}
+      if (typeof storedLevel === undefinedType) {
+        try {
+          var cookie = window.document.cookie;
+          var cookieName = encodeURIComponent(storageKey);
+          var location = cookie.indexOf(cookieName + "=");
+          if (location !== -1) {
+            storedLevel = /^([^;]+)/.exec(cookie.slice(location + cookieName.length + 1))[1];
+          }
+        } catch (ignore) {}
+      }
+      if (self.levels[storedLevel] === undefined) {
+        storedLevel = undefined;
+      }
+      return storedLevel;
+    }
+    function clearPersistedLevel() {
+      if (typeof window === undefinedType || !storageKey) return;
+      try {
+        window.localStorage.removeItem(storageKey);
+      } catch (ignore) {}
+      try {
+        window.document.cookie = encodeURIComponent(storageKey) + "=; expires=Thu, 01 Jan 1970 00:00:00 UTC";
+      } catch (ignore) {}
+    }
+    function normalizeLevel(input) {
+      var level = input;
+      if (typeof level === "string" && self.levels[level.toUpperCase()] !== undefined) {
+        level = self.levels[level.toUpperCase()];
+      }
+      if (typeof level === "number" && level >= 0 && level <= self.levels.SILENT) {
+        return level;
+      } else {
+        throw new TypeError("log.setLevel() called with invalid level: " + input);
+      }
+    }
+    self.name = name;
+    self.levels = {
+      "TRACE": 0,
+      "DEBUG": 1,
+      "INFO": 2,
+      "WARN": 3,
+      "ERROR": 4,
+      "SILENT": 5
+    };
+    self.methodFactory = factory || defaultMethodFactory;
+    self.getLevel = function () {
+      if (userLevel != null) {
+        return userLevel;
+      } else if (defaultLevel != null) {
+        return defaultLevel;
+      } else {
+        return inheritedLevel;
+      }
+    };
+    self.setLevel = function (level, persist) {
+      userLevel = normalizeLevel(level);
+      if (persist !== false) {
+        persistLevelIfPossible(userLevel);
+      }
+      return replaceLoggingMethods.call(self);
+    };
+    self.setDefaultLevel = function (level) {
+      defaultLevel = normalizeLevel(level);
+      if (!getPersistedLevel()) {
+        self.setLevel(level, false);
+      }
+    };
+    self.resetLevel = function () {
+      userLevel = null;
+      clearPersistedLevel();
+      replaceLoggingMethods.call(self);
+    };
+    self.enableAll = function (persist) {
+      self.setLevel(self.levels.TRACE, persist);
+    };
+    self.disableAll = function (persist) {
+      self.setLevel(self.levels.SILENT, persist);
+    };
+    self.rebuild = function () {
+      if (defaultLogger !== self) {
+        inheritedLevel = normalizeLevel(defaultLogger.getLevel());
+      }
+      replaceLoggingMethods.call(self);
+      if (defaultLogger === self) {
+        for (var childName in _loggersByName) {
+          _loggersByName[childName].rebuild();
+        }
+      }
+    };
+    inheritedLevel = normalizeLevel(defaultLogger ? defaultLogger.getLevel() : "WARN");
+    var initialLevel = getPersistedLevel();
+    if (initialLevel != null) {
+      userLevel = normalizeLevel(initialLevel);
+    }
+    replaceLoggingMethods.call(self);
+  }
+  defaultLogger = new Logger();
+  defaultLogger.getLogger = function getLogger(name) {
+    if (typeof name !== "symbol" && typeof name !== "string" || name === "") {
+      throw new TypeError("You must supply a name when creating a logger.");
+    }
+    var logger = _loggersByName[name];
+    if (!logger) {
+      logger = _loggersByName[name] = new Logger(name, defaultLogger.methodFactory);
+    }
+    return logger;
+  };
+  var _log = typeof window !== undefinedType ? window.log : undefined;
+  defaultLogger.noConflict = function () {
+    if (typeof window !== undefinedType && window.log === defaultLogger) {
+      window.log = _log;
+    }
+    return defaultLogger;
+  };
+  defaultLogger.getLoggers = function getLoggers() {
+    return _loggersByName;
+  };
+  defaultLogger['default'] = defaultLogger;
+  return defaultLogger;
+});
+
+/***/ })
+
+/******/ });
+/************************************************************************/
+/******/ // The module cache
+/******/ var __webpack_module_cache__ = {};
+/******/ 
+/******/ // The require function
+/******/ function __webpack_require__(moduleId) {
+/******/ 	// Check if module is in cache
+/******/ 	var cachedModule = __webpack_module_cache__[moduleId];
+/******/ 	if (cachedModule !== undefined) {
+/******/ 		return cachedModule.exports;
+/******/ 	}
+/******/ 	// Create a new module (and put it into the cache)
+/******/ 	var module = __webpack_module_cache__[moduleId] = {
+/******/ 		// no module.id needed
+/******/ 		// no module.loaded needed
+/******/ 		exports: {}
+/******/ 	};
+/******/ 
+/******/ 	// Execute the module function
+/******/ 	__webpack_modules__[moduleId].call(module.exports, module, module.exports, __webpack_require__);
+/******/ 
+/******/ 	// Return the exports of the module
+/******/ 	return module.exports;
+/******/ }
 /******/ 
 /************************************************************************/
 /******/ /* webpack/runtime/define property getters */
@@ -1782,10 +2165,30 @@ class RDFaElement {
     return `<${this.tagName} ${attributesString}>${escapedTextContent}${childrenHtml}</${this.tagName}>`;
   }
 }
+// EXTERNAL MODULE: ./node_modules/loglevel/lib/loglevel.js
+var loglevel = __webpack_require__(912);
+// EXTERNAL MODULE: ./node_modules/loglevel-plugin-prefix/lib/loglevel-plugin-prefix.js
+var loglevel_plugin_prefix = __webpack_require__(734);
 ;// CONCATENATED MODULE: ./src/display/editor/toolbar.js
 
 
 
+
+
+loglevel.noConflict();
+loglevel_plugin_prefix.reg(loglevel);
+loglevel_plugin_prefix.apply(loglevel, {
+  template: '[%t] %l (%n):',
+  levelFormatter(level) {
+    return level.toUpperCase();
+  },
+  nameFormatter(name) {
+    return name || 'toolbar.js';
+  },
+  timestampFormatter(date) {
+    return date.toISOString();
+  }
+});
 class EditorToolbar {
   #toolbar = null;
   #colorPicker = null;
@@ -1883,6 +2286,7 @@ class EditorToolbar {
     this.#buttons.prepend(button, this.#divider);
   }
   addJanEditorTool() {
+    loglevel.info('create your own toolbar-element here');
     const button = document.createElement("button");
     button.className = "janTester";
     button.tabIndex = 0;
@@ -1989,6 +2393,7 @@ class HighlightToolbar {
       signal
     });
     const myHide = () => this.hide();
+    console.log('change the highlight button to WISER');
     button.addEventListener("click", async () => {
       const selection = window.getSelection();
       const selectedRange = selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
@@ -2006,6 +2411,7 @@ function getLastPartOfUrl(url) {
   return parts[parts.length - 1];
 }
 async function setupModal(selectedRange, selection, uiManager, myHide) {
+  loglevel.info('setup modal');
   let currentMessage = null;
   const selectedText = selection.toString();
   let infoToLookFor = [];
@@ -2013,6 +2419,7 @@ async function setupModal(selectedRange, selection, uiManager, myHide) {
   let potentialSubject = null;
   return {
     async render(myWorker) {
+      loglevel.info('render modal');
       const magicWord = 'magic_onSave_' + new Date().toISOString();
       const current_concept = document.getElementById("current-concept-holder").getAttribute("data-current-concept");
       const renderURL = current_concept;
@@ -2046,6 +2453,7 @@ async function setupModal(selectedRange, selection, uiManager, myHide) {
       return await reactionPromise;
     },
     async onSave(myWorker) {
+      loglevel.info('saving modal content');
       const current_concept = document.getElementById("current-concept-holder").getAttribute("data-current-concept");
       const rdfaBuilder = new RDFaBuilder();
       const container = new RDFaElement('div').setVocab('http://schema.org/').setTypeof(appliedConcept).setAttribute('data-wiser-type', current_concept);
@@ -2073,7 +2481,9 @@ async function setupModal(selectedRange, selection, uiManager, myHide) {
           }
         }
       }
-      let page = document.getElementById("pageNumber").value;
+      let viewer = document.getElementById("viewer");
+      let viewerPager = viewer.getElementsByClassName("page").item(0);
+      let page = viewerPager.getAttribute("data-page-number");
       let pdf_name = getLastPartOfUrl(window.location.href);
       const pdfSpan = new RDFaElement('span').setAttribute('property', 'https://wiser-sp4.interactions.ics.unisg.ch/property/has-pdf-id').setTextContent(pdf_name);
       container.addChild(pdfSpan);
@@ -2089,6 +2499,7 @@ async function setupModal(selectedRange, selection, uiManager, myHide) {
         if (selection.rangeCount > 0) selection.removeAllRanges();
         selection.addRange(selectedRange);
       }
+      loglevel.info('actually highlighting the text is done here');
       uiManager.highlightSelection("floating_button");
       uiManager._eventBus.dispatch("switchannotationeditormode", {
         source: this,
@@ -2096,6 +2507,7 @@ async function setupModal(selectedRange, selection, uiManager, myHide) {
       });
     },
     onClose() {
+      loglevel.info('modal is closed');
       uiManager._eventBus.dispatch("switchannotationeditormode", {
         source: this,
         mode: 0
@@ -3874,6 +4286,22 @@ class AltText {
 
 
 
+
+
+loglevel.noConflict();
+loglevel_plugin_prefix.reg(loglevel);
+loglevel_plugin_prefix.apply(loglevel, {
+  template: '[%t] %l (%n):',
+  levelFormatter(level) {
+    return level.toUpperCase();
+  },
+  nameFormatter(name) {
+    return name || 'editor.js';
+  },
+  timestampFormatter(date) {
+    return date.toISOString();
+  }
+});
 class AnnotationEditor {
   #accessibilityData = null;
   #allResizerDivs = null;
@@ -11001,6 +11429,8 @@ class XfaText {
 
 
 
+
+
 const DEFAULT_RANGE_CHUNK_SIZE = 65536;
 const RENDERING_CANCELLED_TIMEOUT = 100;
 const DELAYED_CLEANUP_TIMEOUT = 5000;
@@ -11008,6 +11438,19 @@ const DefaultCanvasFactory = isNodeJS ? NodeCanvasFactory : DOMCanvasFactory;
 const DefaultCMapReaderFactory = isNodeJS ? NodeCMapReaderFactory : DOMCMapReaderFactory;
 const DefaultFilterFactory = isNodeJS ? NodeFilterFactory : DOMFilterFactory;
 const DefaultStandardFontDataFactory = isNodeJS ? NodeStandardFontDataFactory : DOMStandardFontDataFactory;
+loglevel_plugin_prefix.reg(loglevel);
+loglevel_plugin_prefix.apply(loglevel, {
+  template: '[%t] %l (%n):',
+  levelFormatter(level) {
+    return level.toUpperCase();
+  },
+  nameFormatter(name) {
+    return name || 'api.js';
+  },
+  timestampFormatter(date) {
+    return date.toISOString();
+  }
+});
 function getDocument(src = {}) {
   if (typeof src === "string" || src instanceof URL) {
     src = {
@@ -11087,7 +11530,7 @@ function getDocument(src = {}) {
   }
   const docParams = {
     docId,
-    apiVersion: "4.4.151",
+    apiVersion: "4.4.155",
     data,
     password,
     disableAutoFetch,
@@ -12483,11 +12926,13 @@ class WorkerTransport {
     if (this.annotationStorage.size <= 0) {
       warn("saveDocument called while `annotationStorage` is empty, " + "please use the getData-method instead.");
     }
+    loglevel.info('api.js', 'saveDocument', 'serializing DOM in order to get Information from it');
     const marks = wiserSerializeHTMLElement(document.getElementById("viewerContainer"));
     const {
       map,
       transfer
     } = this.annotationStorage.serializable;
+    loglevel.info('api.js', 'saveDocument', 'send with Promise SaveDocument including jan_document (as DOM)');
     return this.messageHandler.sendWithPromise("SaveDocument", {
       isPureXfa: !!this._htmlForXfa,
       numPages: this._numPages,
@@ -12695,10 +13140,12 @@ class PDFObjects {
   }
 }
 function wiserSerializeHTMLElement(element, helper) {
+  loglevel.info('api.js', 'wiserSerializeHTMLElement', 'serializing marks');
   const serializedElements = [];
   const viewer = element.children[1];
   const scaleFactor = viewer ? parseFloat(viewer.style.getPropertyValue("--scale-factor")) : 1;
   function serializeElementWithChildren(element) {
+    loglevel.debug('api.js', 'serializeElementWithChildren');
     const elementObj = {
       tagName: element.tagName,
       attributes: {},
@@ -12715,11 +13162,13 @@ function wiserSerializeHTMLElement(element, helper) {
     return elementObj;
   }
   function extractBaseInfo(expression) {
+    loglevel.info('api.js', 'extractBaseInfo');
     const regex = /(\d+\.?\d*)px/;
     const matches = expression.match(regex);
     return matches ? parseFloat(matches[1]) : null;
   }
   function analyzePageOfMark(element) {
+    loglevel.info('api.js', 'analyzePageOfMark');
     let parent = element.parentElement;
     while (parent && !parent.classList.contains("page")) {
       parent = parent.parentElement;
@@ -12727,6 +13176,12 @@ function wiserSerializeHTMLElement(element, helper) {
     const myHeight = parent.style.getPropertyValue("height");
     const myWidth = parent.style.getPropertyValue("width");
     const pageNumber = parseInt(parent.dataset.pageNumber);
+    const pageNumberDiv = document.createElement("div");
+    if (pageNumberDiv) {
+      pageNumberDiv.setAttribute("id", "page-number-actual");
+      pageNumberDiv.setAttribute("data-page-number-actual", pageNumber);
+      document.body.appendChild(pageNumberDiv);
+    }
     if (pageNumber === undefined) {
       console.error("Page number not found");
     }
@@ -12740,6 +13195,7 @@ function wiserSerializeHTMLElement(element, helper) {
     return returner;
   }
   function findAndSerializeMarks(element) {
+    loglevel.debug('api.js', 'findAndSerializeMarks');
     if (element.attributes.role && element.attributes.role.value === "mark") {
       if (element.parentElement && element.parentElement.tagName.toLowerCase() === "div") {
         const parentSerialized = serializeElementWithChildren(element);
@@ -12760,6 +13216,7 @@ function wiserSerializeHTMLElement(element, helper) {
     }
   }
   function calculateElementPositionAndSize(element) {
+    loglevel.info('api.js', 'calculateElementPositionAndSize');
     const actualHeight = element.actualHeight;
     const actualWidth = element.actualWidth;
     const style = element.attributes.style;
@@ -12962,8 +13419,8 @@ class InternalRenderTask {
     }
   }
 }
-const version = "4.4.151";
-const build = "1d357f742";
+const version = "4.4.155";
+const build = "8ff471dc2";
 
 ;// CONCATENATED MODULE: ./src/shared/scripting_utils.js
 function makeColorComp(n) {
@@ -13241,6 +13698,22 @@ class XfaLayer {
 
 
 
+
+
+loglevel.noConflict();
+loglevel_plugin_prefix.reg(loglevel);
+loglevel_plugin_prefix.apply(loglevel, {
+  template: '[%t] %l (%n):',
+  levelFormatter(level) {
+    return level.toUpperCase();
+  },
+  nameFormatter(name) {
+    return name || 'annotation_layer.js';
+  },
+  timestampFormatter(date) {
+    return date.toISOString();
+  }
+});
 const DEFAULT_TAB_INDEX = 1000;
 const annotation_layer_DEFAULT_FONT_SIZE = 9;
 const GetElementsByNameSet = new WeakSet();
@@ -13713,6 +14186,7 @@ class AnnotationElement {
       data
     } = this;
     container.setAttribute("aria-haspopup", "dialog");
+    loglevel.info('adding rdfa to HTML document');
     const newDiv = document.createElement("div");
     newDiv.innerHTML = data.contentsObj.str;
     const popupDiv = document.getElementById("popus");
@@ -13730,6 +14204,7 @@ class AnnotationElement {
         magic: magicWord,
         url: resource
       });
+      loglevel.info('creating linkHeaderHTML');
       const linkHeaderHTML = document.createElement("div");
       linkHeaderHTML.id = magicWord;
       const linkHeaderSpan = document.createElement("a");
@@ -13764,6 +14239,7 @@ class AnnotationElement {
       elements: [this]
     });
     wiserEventBus.on(magicWord, msg => {
+      loglevel.info('waiting to show content popup', magicWord);
       const startTime = Date.now();
       let linkHeaderDiv;
       while (Date.now() - startTime < 1000) {
@@ -15592,6 +16068,7 @@ class HighlightAnnotationElement extends AnnotationElement {
       this._createPopup();
     }
     this.container.classList.add("highlightAnnotation");
+    loglevel.info('defining color of annotation');
     let color = this.data.color;
     let hexColor = Util.makeHexColor(color[0], color[1], color[2]);
     let rgbaColor = this.hexToRgba(hexColor, 0.25);
@@ -17304,6 +17781,22 @@ class ColorPicker {
 
 
 
+
+
+loglevel.noConflict();
+loglevel_plugin_prefix.reg(loglevel);
+loglevel_plugin_prefix.apply(loglevel, {
+  template: '[%t] %l (%n):',
+  levelFormatter(level) {
+    return level.toUpperCase();
+  },
+  nameFormatter(name) {
+    return name || 'highlight.js';
+  },
+  timestampFormatter(date) {
+    return date.toISOString();
+  }
+});
 class HighlightEditor extends AnnotationEditor {
   #anchorNode = null;
   #anchorOffset = 0;
@@ -17358,6 +17851,7 @@ class HighlightEditor extends AnnotationEditor {
     this.#methodOfCreation = params.methodOfCreation || "";
     this.#text = params.text || "";
     this._isDraggable = false;
+    loglevel.info('get input from modal');
     const storedInput = document.getElementById('rdfa-tmp-storage').getAttribute('data-user-input');
     if (storedInput) {
       this.#rdfa_content = storedInput;
@@ -17560,6 +18054,7 @@ class HighlightEditor extends AnnotationEditor {
       this.#colorPicker = new ColorPicker({
         editor: this
       });
+      loglevel.info('here we could add more picker icons');
     }
     return toolbar;
   }
@@ -17712,6 +18207,7 @@ class HighlightEditor extends AnnotationEditor {
       div.setAttribute("aria-label", this.#text);
       div.setAttribute("role", "mark");
     }
+    loglevel.info('testing for rdfa content', this.#rdfa_content);
     if (this.#rdfa_content) {
       const innerRdfa = document.createElement("div");
       innerRdfa.setAttribute("id", "rdfa-" + this.#id);
@@ -19801,6 +20297,22 @@ class AnnotationEditorLayer {
 ;// CONCATENATED MODULE: ./src/display/draw_layer.js
 
 
+
+
+loglevel.noConflict();
+loglevel_plugin_prefix.reg(loglevel);
+loglevel_plugin_prefix.apply(loglevel, {
+  template: '[%t] %l (%n):',
+  levelFormatter(level) {
+    return level.toUpperCase();
+  },
+  nameFormatter(name) {
+    return name || 'draw_layer.js';
+  },
+  timestampFormatter(date) {
+    return date.toISOString();
+  }
+});
 class DrawLayer {
   #parent = null;
   #id = 0;
@@ -19969,7 +20481,6 @@ class DrawLayer {
     this.#mapping.get(id).setAttribute("fill", color);
   }
   changeOpacity(id, opacity) {
-    console.log("draw opacity", opacity);
     this.#mapping.get(id).setAttribute("fill-opacity", opacity);
   }
   addClass(id, className) {
@@ -20007,8 +20518,8 @@ class DrawLayer {
 
 
 
-const pdfjsVersion = "4.4.151";
-const pdfjsBuild = "1d357f742";
+const pdfjsVersion = "4.4.155";
+const pdfjsBuild = "8ff471dc2";
 
 var __webpack_exports__AbortException = __webpack_exports__.AbortException;
 var __webpack_exports__AnnotationEditorLayer = __webpack_exports__.AnnotationEditorLayer;

@@ -20,8 +20,391 @@
  * JavaScript code in this page
  */
 
-/******/ // The require scope
-/******/ var __webpack_require__ = {};
+/******/ var __webpack_modules__ = ({
+
+/***/ 734:
+/***/ (function(module, exports, __webpack_require__) {
+
+var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_RESULT__;(function (root, factory) {
+  if (true) {
+    !(__WEBPACK_AMD_DEFINE_FACTORY__ = (factory),
+		__WEBPACK_AMD_DEFINE_RESULT__ = (typeof __WEBPACK_AMD_DEFINE_FACTORY__ === 'function' ?
+		(__WEBPACK_AMD_DEFINE_FACTORY__.call(exports, __webpack_require__, exports, module)) :
+		__WEBPACK_AMD_DEFINE_FACTORY__),
+		__WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
+  } else {}
+})(this, function (root) {
+  'use strict';
+
+  var merge = function (target) {
+    var i = 1;
+    var length = arguments.length;
+    var key;
+    for (; i < length; i++) {
+      for (key in arguments[i]) {
+        if (Object.prototype.hasOwnProperty.call(arguments[i], key)) {
+          target[key] = arguments[i][key];
+        }
+      }
+    }
+    return target;
+  };
+  var defaults = {
+    template: '[%t] %l:',
+    levelFormatter: function (level) {
+      return level.toUpperCase();
+    },
+    nameFormatter: function (name) {
+      return name || 'root';
+    },
+    timestampFormatter: function (date) {
+      return date.toTimeString().replace(/.*(\d{2}:\d{2}:\d{2}).*/, '$1');
+    },
+    format: undefined
+  };
+  var loglevel;
+  var configs = {};
+  var reg = function (rootLogger) {
+    if (!rootLogger || !rootLogger.getLogger) {
+      throw new TypeError('Argument is not a root logger');
+    }
+    loglevel = rootLogger;
+  };
+  var apply = function (logger, config) {
+    if (!logger || !logger.setLevel) {
+      throw new TypeError('Argument is not a logger');
+    }
+    var originalFactory = logger.methodFactory;
+    var name = logger.name || '';
+    var parent = configs[name] || configs[''] || defaults;
+    function methodFactory(methodName, logLevel, loggerName) {
+      var originalMethod = originalFactory(methodName, logLevel, loggerName);
+      var options = configs[loggerName] || configs[''];
+      var hasTimestamp = options.template.indexOf('%t') !== -1;
+      var hasLevel = options.template.indexOf('%l') !== -1;
+      var hasName = options.template.indexOf('%n') !== -1;
+      return function () {
+        var content = '';
+        var length = arguments.length;
+        var args = Array(length);
+        var key = 0;
+        for (; key < length; key++) {
+          args[key] = arguments[key];
+        }
+        if (name || !configs[loggerName]) {
+          var timestamp = options.timestampFormatter(new Date());
+          var level = options.levelFormatter(methodName);
+          var lname = options.nameFormatter(loggerName);
+          if (options.format) {
+            content += options.format(level, lname, timestamp);
+          } else {
+            content += options.template;
+            if (hasTimestamp) {
+              content = content.replace(/%t/, timestamp);
+            }
+            if (hasLevel) content = content.replace(/%l/, level);
+            if (hasName) content = content.replace(/%n/, lname);
+          }
+          if (args.length && typeof args[0] === 'string') {
+            args[0] = content + ' ' + args[0];
+          } else {
+            args.unshift(content);
+          }
+        }
+        originalMethod.apply(undefined, args);
+      };
+    }
+    if (!configs[name]) {
+      logger.methodFactory = methodFactory;
+    }
+    config = config || {};
+    if (config.template) config.format = undefined;
+    configs[name] = merge({}, parent, config);
+    logger.setLevel(logger.getLevel());
+    if (!loglevel) {
+      logger.warn('It is necessary to call the function reg() of loglevel-plugin-prefix before calling apply. From the next release, it will throw an error. See more: https://github.com/kutuluk/loglevel-plugin-prefix/blob/master/README.md');
+    }
+    return logger;
+  };
+  var api = {
+    reg: reg,
+    apply: apply
+  };
+  var save;
+  if (root) {
+    save = root.prefix;
+    api.noConflict = function () {
+      if (root.prefix === api) {
+        root.prefix = save;
+      }
+      return api;
+    };
+  }
+  return api;
+});
+
+/***/ }),
+
+/***/ 912:
+/***/ (function(module, exports, __webpack_require__) {
+
+var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_RESULT__;(function (root, definition) {
+  "use strict";
+
+  if (true) {
+    !(__WEBPACK_AMD_DEFINE_FACTORY__ = (definition),
+		__WEBPACK_AMD_DEFINE_RESULT__ = (typeof __WEBPACK_AMD_DEFINE_FACTORY__ === 'function' ?
+		(__WEBPACK_AMD_DEFINE_FACTORY__.call(exports, __webpack_require__, exports, module)) :
+		__WEBPACK_AMD_DEFINE_FACTORY__),
+		__WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
+  } else {}
+})(this, function () {
+  "use strict";
+
+  var noop = function () {};
+  var undefinedType = "undefined";
+  var isIE = typeof window !== undefinedType && typeof window.navigator !== undefinedType && /Trident\/|MSIE /.test(window.navigator.userAgent);
+  var logMethods = ["trace", "debug", "info", "warn", "error"];
+  var _loggersByName = {};
+  var defaultLogger = null;
+  function bindMethod(obj, methodName) {
+    var method = obj[methodName];
+    if (typeof method.bind === 'function') {
+      return method.bind(obj);
+    } else {
+      try {
+        return Function.prototype.bind.call(method, obj);
+      } catch (e) {
+        return function () {
+          return Function.prototype.apply.apply(method, [obj, arguments]);
+        };
+      }
+    }
+  }
+  function traceForIE() {
+    if (console.log) {
+      if (console.log.apply) {
+        console.log.apply(console, arguments);
+      } else {
+        Function.prototype.apply.apply(console.log, [console, arguments]);
+      }
+    }
+    if (console.trace) console.trace();
+  }
+  function realMethod(methodName) {
+    if (methodName === 'debug') {
+      methodName = 'log';
+    }
+    if (typeof console === undefinedType) {
+      return false;
+    } else if (methodName === 'trace' && isIE) {
+      return traceForIE;
+    } else if (console[methodName] !== undefined) {
+      return bindMethod(console, methodName);
+    } else if (console.log !== undefined) {
+      return bindMethod(console, 'log');
+    } else {
+      return noop;
+    }
+  }
+  function replaceLoggingMethods() {
+    var level = this.getLevel();
+    for (var i = 0; i < logMethods.length; i++) {
+      var methodName = logMethods[i];
+      this[methodName] = i < level ? noop : this.methodFactory(methodName, level, this.name);
+    }
+    this.log = this.debug;
+    if (typeof console === undefinedType && level < this.levels.SILENT) {
+      return "No console available for logging";
+    }
+  }
+  function enableLoggingWhenConsoleArrives(methodName) {
+    return function () {
+      if (typeof console !== undefinedType) {
+        replaceLoggingMethods.call(this);
+        this[methodName].apply(this, arguments);
+      }
+    };
+  }
+  function defaultMethodFactory(methodName, _level, _loggerName) {
+    return realMethod(methodName) || enableLoggingWhenConsoleArrives.apply(this, arguments);
+  }
+  function Logger(name, factory) {
+    var self = this;
+    var inheritedLevel;
+    var defaultLevel;
+    var userLevel;
+    var storageKey = "loglevel";
+    if (typeof name === "string") {
+      storageKey += ":" + name;
+    } else if (typeof name === "symbol") {
+      storageKey = undefined;
+    }
+    function persistLevelIfPossible(levelNum) {
+      var levelName = (logMethods[levelNum] || 'silent').toUpperCase();
+      if (typeof window === undefinedType || !storageKey) return;
+      try {
+        window.localStorage[storageKey] = levelName;
+        return;
+      } catch (ignore) {}
+      try {
+        window.document.cookie = encodeURIComponent(storageKey) + "=" + levelName + ";";
+      } catch (ignore) {}
+    }
+    function getPersistedLevel() {
+      var storedLevel;
+      if (typeof window === undefinedType || !storageKey) return;
+      try {
+        storedLevel = window.localStorage[storageKey];
+      } catch (ignore) {}
+      if (typeof storedLevel === undefinedType) {
+        try {
+          var cookie = window.document.cookie;
+          var cookieName = encodeURIComponent(storageKey);
+          var location = cookie.indexOf(cookieName + "=");
+          if (location !== -1) {
+            storedLevel = /^([^;]+)/.exec(cookie.slice(location + cookieName.length + 1))[1];
+          }
+        } catch (ignore) {}
+      }
+      if (self.levels[storedLevel] === undefined) {
+        storedLevel = undefined;
+      }
+      return storedLevel;
+    }
+    function clearPersistedLevel() {
+      if (typeof window === undefinedType || !storageKey) return;
+      try {
+        window.localStorage.removeItem(storageKey);
+      } catch (ignore) {}
+      try {
+        window.document.cookie = encodeURIComponent(storageKey) + "=; expires=Thu, 01 Jan 1970 00:00:00 UTC";
+      } catch (ignore) {}
+    }
+    function normalizeLevel(input) {
+      var level = input;
+      if (typeof level === "string" && self.levels[level.toUpperCase()] !== undefined) {
+        level = self.levels[level.toUpperCase()];
+      }
+      if (typeof level === "number" && level >= 0 && level <= self.levels.SILENT) {
+        return level;
+      } else {
+        throw new TypeError("log.setLevel() called with invalid level: " + input);
+      }
+    }
+    self.name = name;
+    self.levels = {
+      "TRACE": 0,
+      "DEBUG": 1,
+      "INFO": 2,
+      "WARN": 3,
+      "ERROR": 4,
+      "SILENT": 5
+    };
+    self.methodFactory = factory || defaultMethodFactory;
+    self.getLevel = function () {
+      if (userLevel != null) {
+        return userLevel;
+      } else if (defaultLevel != null) {
+        return defaultLevel;
+      } else {
+        return inheritedLevel;
+      }
+    };
+    self.setLevel = function (level, persist) {
+      userLevel = normalizeLevel(level);
+      if (persist !== false) {
+        persistLevelIfPossible(userLevel);
+      }
+      return replaceLoggingMethods.call(self);
+    };
+    self.setDefaultLevel = function (level) {
+      defaultLevel = normalizeLevel(level);
+      if (!getPersistedLevel()) {
+        self.setLevel(level, false);
+      }
+    };
+    self.resetLevel = function () {
+      userLevel = null;
+      clearPersistedLevel();
+      replaceLoggingMethods.call(self);
+    };
+    self.enableAll = function (persist) {
+      self.setLevel(self.levels.TRACE, persist);
+    };
+    self.disableAll = function (persist) {
+      self.setLevel(self.levels.SILENT, persist);
+    };
+    self.rebuild = function () {
+      if (defaultLogger !== self) {
+        inheritedLevel = normalizeLevel(defaultLogger.getLevel());
+      }
+      replaceLoggingMethods.call(self);
+      if (defaultLogger === self) {
+        for (var childName in _loggersByName) {
+          _loggersByName[childName].rebuild();
+        }
+      }
+    };
+    inheritedLevel = normalizeLevel(defaultLogger ? defaultLogger.getLevel() : "WARN");
+    var initialLevel = getPersistedLevel();
+    if (initialLevel != null) {
+      userLevel = normalizeLevel(initialLevel);
+    }
+    replaceLoggingMethods.call(self);
+  }
+  defaultLogger = new Logger();
+  defaultLogger.getLogger = function getLogger(name) {
+    if (typeof name !== "symbol" && typeof name !== "string" || name === "") {
+      throw new TypeError("You must supply a name when creating a logger.");
+    }
+    var logger = _loggersByName[name];
+    if (!logger) {
+      logger = _loggersByName[name] = new Logger(name, defaultLogger.methodFactory);
+    }
+    return logger;
+  };
+  var _log = typeof window !== undefinedType ? window.log : undefined;
+  defaultLogger.noConflict = function () {
+    if (typeof window !== undefinedType && window.log === defaultLogger) {
+      window.log = _log;
+    }
+    return defaultLogger;
+  };
+  defaultLogger.getLoggers = function getLoggers() {
+    return _loggersByName;
+  };
+  defaultLogger['default'] = defaultLogger;
+  return defaultLogger;
+});
+
+/***/ })
+
+/******/ });
+/************************************************************************/
+/******/ // The module cache
+/******/ var __webpack_module_cache__ = {};
+/******/ 
+/******/ // The require function
+/******/ function __webpack_require__(moduleId) {
+/******/ 	// Check if module is in cache
+/******/ 	var cachedModule = __webpack_module_cache__[moduleId];
+/******/ 	if (cachedModule !== undefined) {
+/******/ 		return cachedModule.exports;
+/******/ 	}
+/******/ 	// Create a new module (and put it into the cache)
+/******/ 	var module = __webpack_module_cache__[moduleId] = {
+/******/ 		// no module.id needed
+/******/ 		// no module.loaded needed
+/******/ 		exports: {}
+/******/ 	};
+/******/ 
+/******/ 	// Execute the module function
+/******/ 	__webpack_modules__[moduleId].call(module.exports, module, module.exports, __webpack_require__);
+/******/ 
+/******/ 	// Return the exports of the module
+/******/ 	return module.exports;
+/******/ }
 /******/ 
 /************************************************************************/
 /******/ /* webpack/runtime/define property getters */
@@ -3625,8 +4008,28 @@ class CaretBrowsingMode {
   }
 }
 
+// EXTERNAL MODULE: ./node_modules/loglevel/lib/loglevel.js
+var loglevel = __webpack_require__(912);
+// EXTERNAL MODULE: ./node_modules/loglevel-plugin-prefix/lib/loglevel-plugin-prefix.js
+var loglevel_plugin_prefix = __webpack_require__(734);
 ;// CONCATENATED MODULE: ./web/download_manager.js
 
+
+
+loglevel.noConflict();
+loglevel_plugin_prefix.reg(loglevel);
+loglevel_plugin_prefix.apply(loglevel, {
+  template: '[%t] %l (%n):',
+  levelFormatter(level) {
+    return level.toUpperCase();
+  },
+  nameFormatter(name) {
+    return name || 'download_manager.js';
+  },
+  timestampFormatter(date) {
+    return date.toISOString();
+  }
+});
 function download(blobUrl, filename) {
   const a = document.createElement("a");
   if (!a.click) {
@@ -3642,11 +4045,11 @@ function download(blobUrl, filename) {
   a.remove();
 }
 function saveToServer(blob, filename, savingDone) {
+  loglevel.info('saveToServer', 'saving it to Atomic');
   let method = 'POST';
   if (savingDone) {
     method = 'PUT';
   }
-  console.log(`Saving ${filename} to server...`);
   const formData = new FormData();
   formData.append('file', blob, filename);
   fetch('/v1/api/pdf', {
@@ -3654,7 +4057,7 @@ function saveToServer(blob, filename, savingDone) {
     body: formData
   }).then(response => {
     if (response.ok) {
-      console.log(`File ${filename} saved successfully.`);
+      loglevel.info('download_manager.js', 'saveToServer', 'saving was successful', filename);
     } else {
       console.error('Failed to save the file.');
     }
@@ -3699,17 +4102,16 @@ class DownloadManager {
     return false;
   }
   download(data, url, filename, _options) {
+    loglevel.info('special download version for WISER');
     const saveKGButton = document.getElementById("saveKnowledge");
     let savingDone = saveKGButton.getAttribute("saving-done");
     let choice = false;
     let finalFilename = filename;
     if (!savingDone) {
-      console.log("this is a normal save");
       const finalFilename = prompt("Please enter the filename:", filename);
       choice = confirm("Do you want to save it to the server? Click 'OK' to save to server, 'Cancel' to download the PDF.");
     }
     if (choice || savingDone) {
-      console.log("saving it with savingDone", savingDone);
       saveToServer(new Blob([data], {
         type: "application/pdf"
       }), finalFilename, savingDone);
@@ -10021,7 +10423,7 @@ class PDFViewer {
   #scaleTimeoutId = null;
   #textLayerMode = TextLayerMode.ENABLE;
   constructor(options) {
-    const viewerVersion = "4.4.151";
+    const viewerVersion = "4.4.155";
     if (version !== viewerVersion) {
       throw new Error(`The API version "${version}" does not match the Viewer version "${viewerVersion}".`);
     }
@@ -12101,6 +12503,8 @@ class ViewHistory {
 
 
 
+
+
 const FORCE_PAGES_LOADED_TIMEOUT = 10000;
 const WHEEL_ZOOM_DISABLED_TIMEOUT = 1000;
 const ViewOnLoad = {
@@ -12291,6 +12695,26 @@ const PDFViewerApplication = {
     } = this;
     const eventBus = AppOptions.get("isInAutomation") ? new AutomationEventBus() : new EventBus();
     this.eventBus = eventBus;
+    loglevel.setLevel("INFO", true);
+    loglevel.noConflict();
+    loglevel_plugin_prefix.reg(loglevel);
+    loglevel_plugin_prefix.apply(loglevel, {
+      template: '[%t] %l (%n):',
+      levelFormatter(level) {
+        return level.toUpperCase();
+      },
+      nameFormatter(name) {
+        if (!name) {
+          if (document && document.currentScript) {
+            name = document.currentScript.src;
+          }
+        }
+        return name || 'app.js';
+      },
+      timestampFormatter(date) {
+        return date.toISOString();
+      }
+    });
     this.overlayManager = new OverlayManager();
     const pdfRenderingQueue = new PDFRenderingQueue();
     pdfRenderingQueue.onIdle = this._cleanup.bind(this);
@@ -14371,9 +14795,26 @@ function webViewerReportTelemetry({
 }
 
 ;// CONCATENATED MODULE: ./web/WiserEventBus.js
+
+
+loglevel.noConflict();
+loglevel_plugin_prefix.reg(loglevel);
+loglevel_plugin_prefix.apply(loglevel, {
+  template: '[%t] %l (%n):',
+  levelFormatter(level) {
+    return level.toUpperCase();
+  },
+  nameFormatter(name) {
+    return name || 'wiserEventBus';
+  },
+  timestampFormatter(date) {
+    return date.toISOString();
+  }
+});
 const WiserEventBus = {
   events: {},
   on(event, listener) {
+    loglevel.info('received event', event);
     if (!this.events[event]) {
       this.events[event] = [];
     }
@@ -14390,7 +14831,24 @@ const WiserEventBus = {
 };
 /* harmony default export */ const web_WiserEventBus = (WiserEventBus);
 ;// CONCATENATED MODULE: ./web/modals/workerHandler.js
+
+
+loglevel.noConflict();
+loglevel_plugin_prefix.reg(loglevel);
+loglevel_plugin_prefix.apply(loglevel, {
+  template: '[%t] %l (%n):',
+  levelFormatter(level) {
+    return level.toUpperCase();
+  },
+  nameFormatter(name) {
+    return name || 'workerHandler.js';
+  },
+  timestampFormatter(date) {
+    return date.toISOString();
+  }
+});
 async function handleConceptButtons(data) {
+  loglevel.info('handleConceptButtons');
   const buttonContainer = document.querySelector('.button-container.pdf_utils');
   if (buttonContainer) {
     const tempContainer = document.createElement('div');
@@ -14402,14 +14860,13 @@ async function handleConceptButtons(data) {
   }
 }
 async function handleUpdatePDFAfterKGAdd(data, document) {
+  loglevel.info('handleUpdatePDFAfterKGAdd');
   const potentialSaveCandidates = document.querySelectorAll('[data-wiser-potential-subject]');
-  console.log("found those potential candidates after PDF Update", potentialSaveCandidates);
   const updatedList = data.updatedElements;
   for (const changeCandidate of potentialSaveCandidates) {
     const subject = changeCandidate.getAttribute("data-wiser-potential-subject");
     if (updatedList.includes(subject)) {
       changeCandidate.removeAttribute("data-wiser-potential-subject");
-      console.log("setting wiser-Resource", subject);
       changeCandidate.setAttribute('data-wiser-subject', subject);
     }
   }
@@ -14429,8 +14886,24 @@ async function handleUpdatePDFAfterKGAdd(data, document) {
 
 
 
-const pdfjsVersion = "4.4.151";
-const pdfjsBuild = "1d357f742";
+
+
+loglevel.noConflict();
+loglevel_plugin_prefix.reg(loglevel);
+loglevel_plugin_prefix.apply(loglevel, {
+  template: '[%t] %l (%n):',
+  levelFormatter(level) {
+    return level.toUpperCase();
+  },
+  nameFormatter(name) {
+    return name || 'viewer.js';
+  },
+  timestampFormatter(date) {
+    return date.toISOString();
+  }
+});
+const pdfjsVersion = "4.4.155";
+const pdfjsBuild = "8ff471dc2";
 const AppConstants = {
   LinkTarget: LinkTarget,
   RenderingStates: RenderingStates,
@@ -14441,6 +14914,7 @@ window.PDFViewerApplication = PDFViewerApplication;
 window.PDFViewerApplicationConstants = AppConstants;
 window.PDFViewerApplicationOptions = AppOptions;
 function getViewerConfiguration() {
+  loglevel.info('changing appContainer to janpdf (customized)');
   return {
     appContainer: document.getElementById("janpdf"),
     mainContainer: document.getElementById("viewerContainer"),
@@ -14586,6 +15060,7 @@ function webViewerLoad() {
 }
 document.blockUnblockOnload?.(true);
 if (document.readyState === "interactive" || document.readyState === "complete") {
+  loglevel.info('setting up atomic worker and wiser Eventbus');
   window.myAtomicWorker = new Worker("/v1/api/pdf_api/js/atomic.worker.js");
   window.WiserEventBus = web_WiserEventBus;
   webViewerLoad();
@@ -14595,6 +15070,7 @@ if (document.readyState === "interactive" || document.readyState === "complete")
 
 class Modal {
   constructor() {
+    loglevel.info('constructing acutal modal');
     this.modalRoot = document.getElementById('modal-root');
     this.initStore().then(success => {
       web_WiserEventBus.on('showModal', this.showModal.bind(this));
@@ -14609,6 +15085,7 @@ class Modal {
     });
   }
   async initStore() {
+    loglevel.info('init Atomic Store');
     window.myAtomicWorker.onmessage = async e => {
       switch (e.data.type) {
         case "pong":
@@ -14643,6 +15120,7 @@ class Modal {
     window.myAtomicWorker = myAtomicWorker;
   }
   async showModal(modal) {
+    loglevel.info('acutal show of the modal');
     this.clearModal();
     const modalOverlay = document.createElement('div');
     modalOverlay.className = 'modal-overlay';
@@ -14672,6 +15150,7 @@ class Modal {
     this.modalRoot.appendChild(modalOverlay);
   }
   clearModal() {
+    loglevel.info('modal clearance');
     this.modalRoot.innerHTML = '';
   }
 }
