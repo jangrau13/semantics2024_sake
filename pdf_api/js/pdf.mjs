@@ -71,6 +71,7 @@ __webpack_require__.d(__webpack_exports__, {
   PermissionFlag: () => (/* reexport */ PermissionFlag),
   PixelsPerInch: () => (/* reexport */ PixelsPerInch),
   RenderingCancelledException: () => (/* reexport */ RenderingCancelledException),
+  TextLayer: () => (/* reexport */ TextLayer),
   UnexpectedResponseException: () => (/* reexport */ UnexpectedResponseException),
   Util: () => (/* reexport */ Util),
   VerbosityLevel: () => (/* reexport */ VerbosityLevel),
@@ -855,10 +856,14 @@ class BaseFilterFactory {
   destroy(keepHCM = false) {}
 }
 class BaseCanvasFactory {
-  constructor() {
+  #enableHWA = false;
+  constructor({
+    enableHWA = false
+  } = {}) {
     if (this.constructor === BaseCanvasFactory) {
       unreachable("Cannot initialize BaseCanvasFactory.");
     }
+    this.#enableHWA = enableHWA;
   }
   create(width, height) {
     if (width <= 0 || height <= 0) {
@@ -867,7 +872,9 @@ class BaseCanvasFactory {
     const canvas = this._createCanvas(width, height);
     return {
       canvas,
-      context: canvas.getContext("2d")
+      context: canvas.getContext("2d", {
+        willReadFrequently: !this.#enableHWA
+      })
     };
   }
   reset(canvasAndContext, width, height) {
@@ -1293,9 +1300,12 @@ class DOMFilterFactory extends BaseFilterFactory {
 }
 class DOMCanvasFactory extends BaseCanvasFactory {
   constructor({
-    ownerDocument = globalThis.document
+    ownerDocument = globalThis.document,
+    enableHWA = false
   } = {}) {
-    super();
+    super({
+      enableHWA
+    });
     this._document = ownerDocument;
   }
   _createCanvas(width, height) {
@@ -1788,8 +1798,13 @@ class EditorToolbar {
     const editToolbar = this.#toolbar = document.createElement("div");
     editToolbar.className = "editToolbar";
     editToolbar.setAttribute("role", "toolbar");
-    editToolbar.addEventListener("contextmenu", noContextMenu);
-    editToolbar.addEventListener("pointerdown", EditorToolbar.#pointerDown);
+    const signal = this.#editor._uiManager._signal;
+    editToolbar.addEventListener("contextmenu", noContextMenu, {
+      signal
+    });
+    editToolbar.addEventListener("pointerdown", EditorToolbar.#pointerDown, {
+      signal
+    });
     const buttons = this.#buttons = document.createElement("div");
     buttons.className = "buttons";
     editToolbar.append(buttons);
@@ -1819,13 +1834,18 @@ class EditorToolbar {
     e.stopPropagation();
   }
   #addListenersToElement(element) {
+    const signal = this.#editor._uiManager._signal;
     element.addEventListener("focusin", this.#focusIn.bind(this), {
-      capture: true
+      capture: true,
+      signal
     });
     element.addEventListener("focusout", this.#focusOut.bind(this), {
-      capture: true
+      capture: true,
+      signal
     });
-    element.addEventListener("contextmenu", noContextMenu);
+    element.addEventListener("contextmenu", noContextMenu, {
+      signal
+    });
   }
   hide() {
     this.#toolbar.classList.add("hidden");
@@ -1842,6 +1862,8 @@ class EditorToolbar {
     this.#addListenersToElement(button);
     button.addEventListener("click", e => {
       this.#editor._uiManager.delete();
+    }, {
+      signal: this.#editor._uiManager._signal
     });
     this.#buttons.append(button);
   }
@@ -1908,7 +1930,9 @@ class HighlightToolbar {
     const editToolbar = this.#toolbar = document.createElement("div");
     editToolbar.className = "editToolbar";
     editToolbar.setAttribute("role", "toolbar");
-    editToolbar.addEventListener("contextmenu", noContextMenu);
+    editToolbar.addEventListener("contextmenu", noContextMenu, {
+      signal: this.#uiManager._signal
+    });
     const buttons = this.#buttons = document.createElement("div");
     buttons.className = "buttons";
     editToolbar.append(buttons);
@@ -1960,7 +1984,10 @@ class HighlightToolbar {
     button.append(span);
     span.className = "visuallyHidden";
     span.setAttribute("data-l10n-id", "pdfjs-highlight-floating-button-label");
-    button.addEventListener("contextmenu", noContextMenu);
+    const signal = this.#uiManager._signal;
+    button.addEventListener("contextmenu", noContextMenu, {
+      signal
+    });
     const myHide = () => this.hide();
     button.addEventListener("click", async () => {
       const selection = window.getSelection();
@@ -1968,6 +1995,8 @@ class HighlightToolbar {
       const uiManager = this.#uiManager;
       const myFreshModal = await setupModal(selectedRange, selection, uiManager, myHide);
       window.wiserEventBus.emit('showModal', myFreshModal);
+    }, {
+      signal
     });
     this.#buttons.append(button);
   }
@@ -2101,7 +2130,9 @@ class ImageManager {
   static get _isSVGFittingCanvas() {
     const svg = `data:image/svg+xml;charset=UTF-8,<svg viewBox="0 0 1 1" width="1" height="1" xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1" style="fill:red;"/></svg>`;
     const canvas = new OffscreenCanvas(1, 3);
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", {
+      willReadFrequently: true
+    });
     const image = new Image();
     image.src = svg;
     const promise = image.decode().then(() => {
@@ -2407,6 +2438,7 @@ class ColorManager {
   }
 }
 class AnnotationEditorUIManager {
+  #abortController = new AbortController();
   #activeEditor = null;
   #allEditors = new Map();
   #allLayers = new Map();
@@ -2446,7 +2478,6 @@ class AnnotationEditorUIManager {
   #boundOnEditingAction = this.onEditingAction.bind(this);
   #boundOnPageChanging = this.onPageChanging.bind(this);
   #boundOnScaleChanging = this.onScaleChanging.bind(this);
-  #boundSelectionChange = this.#selectionChange.bind(this);
   #boundOnRotationChanging = this.onRotationChanging.bind(this);
   #previousStates = {
     isEditing: false,
@@ -2521,6 +2552,7 @@ class AnnotationEditorUIManager {
     }]]));
   }
   constructor(container, viewer, altTextManager, eventBus, pdfDocument, pageColors, highlightColors, enableHighlightFloatingButton, mlManager) {
+    this._signal = this.#abortController.signal;
     this.#container = container;
     this.#viewer = viewer;
     this.#altTextManager = altTextManager;
@@ -2530,6 +2562,7 @@ class AnnotationEditorUIManager {
     this._eventBus._on("scalechanging", this.#boundOnScaleChanging);
     this._eventBus._on("rotationchanging", this.#boundOnRotationChanging);
     this.#addSelectionListener();
+    this.#addDragAndDropListeners();
     this.#addKeyboardManager();
     this.#annotationStorage = pdfDocument.annotationStorage;
     this.#filterFactory = pdfDocument.filterFactory;
@@ -2544,8 +2577,9 @@ class AnnotationEditorUIManager {
     this.isShiftKeyDown = false;
   }
   destroy() {
-    this.#removeKeyboardManager();
-    this.#removeFocusManager();
+    this.#abortController?.abort();
+    this.#abortController = null;
+    this._signal = null;
     this._eventBus._off("editingaction", this.#boundOnEditingAction);
     this._eventBus._off("pagechanging", this.#boundOnPageChanging);
     this._eventBus._off("scalechanging", this.#boundOnScaleChanging);
@@ -2570,7 +2604,6 @@ class AnnotationEditorUIManager {
       clearTimeout(this.#translationTimeoutId);
       this.#translationTimeoutId = null;
     }
-    this.#removeSelectionListener();
   }
   async mlGuess(data) {
     return this.#mlManager?.guess(data) || null;
@@ -2753,6 +2786,7 @@ class AnnotationEditorUIManager {
     }
     this.#highlightWhenShiftUp = this.isShiftKeyDown;
     if (!this.isShiftKeyDown) {
+      const signal = this._signal;
       const pointerup = e => {
         if (e.type === "pointerup" && e.button !== 0) {
           return;
@@ -2763,8 +2797,12 @@ class AnnotationEditorUIManager {
           this.#onSelectEnd("main_toolbar");
         }
       };
-      window.addEventListener("pointerup", pointerup);
-      window.addEventListener("blur", pointerup);
+      window.addEventListener("pointerup", pointerup, {
+        signal
+      });
+      window.addEventListener("blur", pointerup, {
+        signal
+      });
     }
   }
   #onSelectEnd(methodOfCreation = "") {
@@ -2775,14 +2813,18 @@ class AnnotationEditorUIManager {
     }
   }
   #addSelectionListener() {
-    document.addEventListener("selectionchange", this.#boundSelectionChange);
-  }
-  #removeSelectionListener() {
-    document.removeEventListener("selectionchange", this.#boundSelectionChange);
+    document.addEventListener("selectionchange", this.#selectionChange.bind(this), {
+      signal: this._signal
+    });
   }
   #addFocusManager() {
-    window.addEventListener("focus", this.#boundFocus);
-    window.addEventListener("blur", this.#boundBlur);
+    const signal = this._signal;
+    window.addEventListener("focus", this.#boundFocus, {
+      signal
+    });
+    window.addEventListener("blur", this.#boundBlur, {
+      signal
+    });
   }
   #removeFocusManager() {
     window.removeEventListener("focus", this.#boundFocus);
@@ -2817,27 +2859,49 @@ class AnnotationEditorUIManager {
     lastActiveElement.addEventListener("focusin", () => {
       lastEditor._focusEventsAllowed = true;
     }, {
-      once: true
+      once: true,
+      signal: this._signal
     });
     lastActiveElement.focus();
   }
   #addKeyboardManager() {
-    window.addEventListener("keydown", this.#boundKeydown);
-    window.addEventListener("keyup", this.#boundKeyup);
+    const signal = this._signal;
+    window.addEventListener("keydown", this.#boundKeydown, {
+      signal
+    });
+    window.addEventListener("keyup", this.#boundKeyup, {
+      signal
+    });
   }
   #removeKeyboardManager() {
     window.removeEventListener("keydown", this.#boundKeydown);
     window.removeEventListener("keyup", this.#boundKeyup);
   }
   #addCopyPasteListeners() {
-    document.addEventListener("copy", this.#boundCopy);
-    document.addEventListener("cut", this.#boundCut);
-    document.addEventListener("paste", this.#boundPaste);
+    const signal = this._signal;
+    document.addEventListener("copy", this.#boundCopy, {
+      signal
+    });
+    document.addEventListener("cut", this.#boundCut, {
+      signal
+    });
+    document.addEventListener("paste", this.#boundPaste, {
+      signal
+    });
   }
   #removeCopyPasteListeners() {
     document.removeEventListener("copy", this.#boundCopy);
     document.removeEventListener("cut", this.#boundCut);
     document.removeEventListener("paste", this.#boundPaste);
+  }
+  #addDragAndDropListeners() {
+    const signal = this._signal;
+    document.addEventListener("dragover", this.dragOver.bind(this), {
+      signal
+    });
+    document.addEventListener("drop", this.drop.bind(this), {
+      signal
+    });
   }
   addEditListeners() {
     this.#addKeyboardManager();
@@ -2846,6 +2910,30 @@ class AnnotationEditorUIManager {
   removeEditListeners() {
     this.#removeKeyboardManager();
     this.#removeCopyPasteListeners();
+  }
+  dragOver(event) {
+    for (const {
+      type
+    } of event.dataTransfer.items) {
+      for (const editorType of this.#editorTypes) {
+        if (editorType.isHandlingMimeForPasting(type)) {
+          event.dataTransfer.dropEffect = "copy";
+          event.preventDefault();
+          return;
+        }
+      }
+    }
+  }
+  drop(event) {
+    for (const item of event.dataTransfer.items) {
+      for (const editorType of this.#editorTypes) {
+        if (editorType.isHandlingMimeForPasting(item.type)) {
+          editorType.paste(item, this.currentLayer);
+          event.preventDefault();
+          return;
+        }
+      }
+    }
   }
   copy(event) {
     event.preventDefault();
@@ -3651,20 +3739,28 @@ class AltText {
     altText.textContent = msg;
     altText.setAttribute("aria-label", msg);
     altText.tabIndex = "0";
-    altText.addEventListener("contextmenu", noContextMenu);
-    altText.addEventListener("pointerdown", event => event.stopPropagation());
+    const signal = this.#editor._uiManager._signal;
+    altText.addEventListener("contextmenu", noContextMenu, {
+      signal
+    });
+    altText.addEventListener("pointerdown", event => event.stopPropagation(), {
+      signal
+    });
     const onClick = event => {
       event.preventDefault();
       this.#editor._uiManager.editAltText(this.#editor);
     };
     altText.addEventListener("click", onClick, {
-      capture: true
+      capture: true,
+      signal
     });
     altText.addEventListener("keydown", event => {
       if (event.target === altText && event.key === "Enter") {
         this.#altTextWasFromKeyBoard = true;
         onClick(event);
       }
+    }, {
+      signal
     });
     await this.#setState();
     return altText;
@@ -3735,6 +3831,13 @@ class AltText {
       const id = tooltip.id = `alt-text-tooltip-${this.#editor.id}`;
       button.setAttribute("aria-describedby", id);
       const DELAY_TO_SHOW_TOOLTIP = 100;
+      const signal = this.#editor._uiManager._signal;
+      signal.addEventListener("abort", () => {
+        clearTimeout(this.#altTextTooltipTimeout);
+        this.#altTextTooltipTimeout = null;
+      }, {
+        once: true
+      });
       button.addEventListener("mouseenter", () => {
         this.#altTextTooltipTimeout = setTimeout(() => {
           this.#altTextTooltipTimeout = null;
@@ -3743,6 +3846,8 @@ class AltText {
             action: "alt_text_tooltip"
           });
         }, DELAY_TO_SHOW_TOOLTIP);
+      }, {
+        signal
       });
       button.addEventListener("mouseleave", () => {
         if (this.#altTextTooltipTimeout) {
@@ -3750,6 +3855,8 @@ class AltText {
           this.#altTextTooltipTimeout = null;
         }
         this.#altTextTooltip?.classList.remove("show");
+      }, {
+        signal
       });
     }
     tooltip.innerText = this.#altTextDecorative ? await AltText._l10nPromise.get("pdfjs-editor-alt-text-decorative-tooltip") : this.#altText;
@@ -3768,6 +3875,7 @@ class AltText {
 
 
 class AnnotationEditor {
+  #accessibilityData = null;
   #allResizerDivs = null;
   #altText = null;
   #disabled = false;
@@ -4196,13 +4304,18 @@ class AnnotationEditor {
     this.#resizersDiv = document.createElement("div");
     this.#resizersDiv.classList.add("resizers");
     const classes = this._willKeepAspectRatio ? ["topLeft", "topRight", "bottomRight", "bottomLeft"] : ["topLeft", "topMiddle", "topRight", "middleRight", "bottomRight", "bottomMiddle", "bottomLeft", "middleLeft"];
+    const signal = this._uiManager._signal;
     for (const name of classes) {
       const div = document.createElement("div");
       this.#resizersDiv.append(div);
       div.classList.add("resizer", name);
       div.setAttribute("data-resizer-name", name);
-      div.addEventListener("pointerdown", this.#resizerPointerdown.bind(this, name));
-      div.addEventListener("contextmenu", noContextMenu);
+      div.addEventListener("pointerdown", this.#resizerPointerdown.bind(this, name), {
+        signal
+      });
+      div.addEventListener("contextmenu", noContextMenu, {
+        signal
+      });
       div.tabIndex = -1;
     }
     this.div.prepend(this.#resizersDiv);
@@ -4219,13 +4332,17 @@ class AnnotationEditor {
     const boundResizerPointermove = this.#resizerPointermove.bind(this, name);
     const savedDraggable = this._isDraggable;
     this._isDraggable = false;
+    const signal = this._uiManager._signal;
     const pointerMoveOptions = {
       passive: true,
-      capture: true
+      capture: true,
+      signal
     };
     this.parent.togglePointerEvents(false);
     window.addEventListener("pointermove", boundResizerPointermove, pointerMoveOptions);
-    window.addEventListener("contextmenu", noContextMenu);
+    window.addEventListener("contextmenu", noContextMenu, {
+      signal
+    });
     const savedX = this.x;
     const savedY = this.y;
     const savedWidth = this.width;
@@ -4245,8 +4362,12 @@ class AnnotationEditor {
       this.div.style.cursor = savedCursor;
       this.#addResizeToUndoStack(savedX, savedY, savedWidth, savedHeight);
     };
-    window.addEventListener("pointerup", pointerUpCallback);
-    window.addEventListener("blur", pointerUpCallback);
+    window.addEventListener("pointerup", pointerUpCallback, {
+      signal
+    });
+    window.addEventListener("blur", pointerUpCallback, {
+      signal
+    });
   }
   #addResizeToUndoStack(savedX, savedY, savedWidth, savedHeight) {
     const newX = this.x;
@@ -4395,6 +4516,10 @@ class AnnotationEditor {
     }
     AltText.initialize(AnnotationEditor._l10nPromise);
     this.#altText = new AltText(this);
+    if (this.#accessibilityData) {
+      this.#altText.data = this.#accessibilityData;
+      this.#accessibilityData = null;
+    }
     await this.addEditToolbar();
   }
   get altTextData() {
@@ -4419,8 +4544,13 @@ class AnnotationEditor {
       this.div.classList.add("hidden");
     }
     this.setInForeground();
-    this.div.addEventListener("focusin", this.#boundFocusin);
-    this.div.addEventListener("focusout", this.#boundFocusout);
+    const signal = this._uiManager._signal;
+    this.div.addEventListener("focusin", this.#boundFocusin, {
+      signal
+    });
+    this.div.addEventListener("focusout", this.#boundFocusout, {
+      signal
+    });
     const [parentWidth, parentHeight] = this.parentDimensions;
     if (this.parentRotation % 180 !== 0) {
       this.div.style.maxWidth = `${(100 * parentHeight / parentWidth).toFixed(2)}%`;
@@ -4460,11 +4590,13 @@ class AnnotationEditor {
     const isSelected = this._uiManager.isSelected(this);
     this._uiManager.setUpDragSession();
     let pointerMoveOptions, pointerMoveCallback;
+    const signal = this._uiManager._signal;
     if (isSelected) {
       this.div.classList.add("moving");
       pointerMoveOptions = {
         passive: true,
-        capture: true
+        capture: true,
+        signal
       };
       this.#prevDragX = event.clientX;
       this.#prevDragY = event.clientY;
@@ -4492,8 +4624,12 @@ class AnnotationEditor {
         this.#selectOnPointerEvent(event);
       }
     };
-    window.addEventListener("pointerup", pointerUpCallback);
-    window.addEventListener("blur", pointerUpCallback);
+    window.addEventListener("pointerup", pointerUpCallback, {
+      signal
+    });
+    window.addEventListener("blur", pointerUpCallback, {
+      signal
+    });
   }
   moveInDOM() {
     if (this.#moveInDOMTimeout) {
@@ -4570,8 +4706,13 @@ class AnnotationEditor {
     return this.div && !this.isAttachedToDOM;
   }
   rebuild() {
-    this.div?.addEventListener("focusin", this.#boundFocusin);
-    this.div?.addEventListener("focusout", this.#boundFocusout);
+    const signal = this._uiManager._signal;
+    this.div?.addEventListener("focusin", this.#boundFocusin, {
+      signal
+    });
+    this.div?.addEventListener("focusout", this.#boundFocusout, {
+      signal
+    });
   }
   rotate(_angle) {}
   serialize(isForCopying = false, context = null) {
@@ -4584,6 +4725,7 @@ class AnnotationEditor {
       uiManager
     });
     editor.rotation = data.rotation;
+    editor.#accessibilityData = data.accessibilityData;
     const [pageWidth, pageHeight] = editor.pageDimensions;
     const [x, y, width, height] = editor.getRectInCurrentCoords(data.rect, pageHeight);
     editor.x = x / pageWidth;
@@ -4649,12 +4791,19 @@ class AnnotationEditor {
       this.#allResizerDivs = Array.from(children);
       const boundResizerKeydown = this.#resizerKeydown.bind(this);
       const boundResizerBlur = this.#resizerBlur.bind(this);
+      const signal = this._uiManager._signal;
       for (const div of this.#allResizerDivs) {
         const name = div.getAttribute("data-resizer-name");
         div.setAttribute("role", "spinbutton");
-        div.addEventListener("keydown", boundResizerKeydown);
-        div.addEventListener("blur", boundResizerBlur);
-        div.addEventListener("focus", this.#resizerFocus.bind(this, name));
+        div.addEventListener("keydown", boundResizerKeydown, {
+          signal
+        });
+        div.addEventListener("blur", boundResizerBlur, {
+          signal
+        });
+        div.addEventListener("focus", this.#resizerFocus.bind(this, name), {
+          signal
+        });
         AnnotationEditor._l10nPromise.get(`pdfjs-editor-resizer-label-${name}`).then(msg => div.setAttribute("aria-label", msg));
       }
     }
@@ -8295,360 +8444,6 @@ for (const op in OPS) {
   }
 }
 
-;// CONCATENATED MODULE: ./src/display/text_layer.js
-
-
-const MAX_TEXT_DIVS_TO_RENDER = 100000;
-const DEFAULT_FONT_SIZE = 30;
-const DEFAULT_FONT_ASCENT = 0.8;
-const ascentCache = new Map();
-let _canvasContext = null;
-const pendingTextLayers = new Set();
-function getCtx(lang = null) {
-  if (!_canvasContext) {
-    const canvas = document.createElement("canvas");
-    canvas.className = "hiddenCanvasElement";
-    document.body.append(canvas);
-    _canvasContext = canvas.getContext("2d", {
-      alpha: false
-    });
-  }
-  return _canvasContext;
-}
-function cleanupTextLayer() {
-  if (pendingTextLayers.size > 0) {
-    return;
-  }
-  _canvasContext?.canvas.remove();
-  _canvasContext = null;
-}
-function getAscent(fontFamily, lang) {
-  const cachedAscent = ascentCache.get(fontFamily);
-  if (cachedAscent) {
-    return cachedAscent;
-  }
-  const ctx = getCtx(lang);
-  const savedFont = ctx.font;
-  ctx.canvas.width = ctx.canvas.height = DEFAULT_FONT_SIZE;
-  ctx.font = `${DEFAULT_FONT_SIZE}px ${fontFamily}`;
-  const metrics = ctx.measureText("");
-  let ascent = metrics.fontBoundingBoxAscent;
-  let descent = Math.abs(metrics.fontBoundingBoxDescent);
-  if (ascent) {
-    const ratio = ascent / (ascent + descent);
-    ascentCache.set(fontFamily, ratio);
-    ctx.canvas.width = ctx.canvas.height = 0;
-    ctx.font = savedFont;
-    return ratio;
-  }
-  ctx.strokeStyle = "red";
-  ctx.clearRect(0, 0, DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE);
-  ctx.strokeText("g", 0, 0);
-  let pixels = ctx.getImageData(0, 0, DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE).data;
-  descent = 0;
-  for (let i = pixels.length - 1 - 3; i >= 0; i -= 4) {
-    if (pixels[i] > 0) {
-      descent = Math.ceil(i / 4 / DEFAULT_FONT_SIZE);
-      break;
-    }
-  }
-  ctx.clearRect(0, 0, DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE);
-  ctx.strokeText("A", 0, DEFAULT_FONT_SIZE);
-  pixels = ctx.getImageData(0, 0, DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE).data;
-  ascent = 0;
-  for (let i = 0, ii = pixels.length; i < ii; i += 4) {
-    if (pixels[i] > 0) {
-      ascent = DEFAULT_FONT_SIZE - Math.floor(i / 4 / DEFAULT_FONT_SIZE);
-      break;
-    }
-  }
-  ctx.canvas.width = ctx.canvas.height = 0;
-  ctx.font = savedFont;
-  if (ascent) {
-    const ratio = ascent / (ascent + descent);
-    ascentCache.set(fontFamily, ratio);
-    return ratio;
-  }
-  ascentCache.set(fontFamily, DEFAULT_FONT_ASCENT);
-  return DEFAULT_FONT_ASCENT;
-}
-function layout(params) {
-  const {
-    div,
-    scale,
-    properties,
-    ctx,
-    prevFontSize,
-    prevFontFamily
-  } = params;
-  const {
-    style
-  } = div;
-  let transform = "";
-  if (properties.canvasWidth !== 0 && properties.hasText) {
-    const {
-      fontFamily
-    } = style;
-    const {
-      canvasWidth,
-      fontSize
-    } = properties;
-    if (prevFontSize !== fontSize || prevFontFamily !== fontFamily) {
-      ctx.font = `${fontSize * scale}px ${fontFamily}`;
-      params.prevFontSize = fontSize;
-      params.prevFontFamily = fontFamily;
-    }
-    const {
-      width
-    } = ctx.measureText(div.textContent);
-    if (width > 0) {
-      transform = `scaleX(${canvasWidth * scale / width})`;
-    }
-  }
-  if (properties.angle !== 0) {
-    transform = `rotate(${properties.angle}deg) ${transform}`;
-  }
-  if (transform.length > 0) {
-    style.transform = transform;
-  }
-}
-class TextLayerRenderTask {
-  #disableProcessItems = false;
-  #reader = null;
-  #textContentSource = null;
-  constructor({
-    textContentSource,
-    container,
-    viewport,
-    textDivs,
-    textDivProperties,
-    textContentItemsStr
-  }) {
-    if (textContentSource instanceof ReadableStream) {
-      this.#textContentSource = textContentSource;
-    } else if (typeof textContentSource === "object") {
-      this.#textContentSource = new ReadableStream({
-        start(controller) {
-          controller.enqueue(textContentSource);
-          controller.close();
-        }
-      });
-    } else {
-      throw new Error('No "textContentSource" parameter specified.');
-    }
-    this._container = this._rootContainer = container;
-    this._textDivs = textDivs || [];
-    this._textContentItemsStr = textContentItemsStr || [];
-    this._fontInspectorEnabled = !!globalThis.FontInspector?.enabled;
-    this._textDivProperties = textDivProperties || new WeakMap();
-    this._canceled = false;
-    this._capability = Promise.withResolvers();
-    this._layoutTextParams = {
-      prevFontSize: null,
-      prevFontFamily: null,
-      div: null,
-      scale: viewport.scale * (globalThis.devicePixelRatio || 1),
-      properties: null,
-      ctx: null
-    };
-    this._styleCache = Object.create(null);
-    const {
-      pageWidth,
-      pageHeight,
-      pageX,
-      pageY
-    } = viewport.rawDims;
-    this._transform = [1, 0, 0, -1, -pageX, pageY + pageHeight];
-    this._pageWidth = pageWidth;
-    this._pageHeight = pageHeight;
-    setLayerDimensions(container, viewport);
-    pendingTextLayers.add(this);
-    this._capability.promise.finally(() => {
-      pendingTextLayers.delete(this);
-      this._layoutTextParams = null;
-      this._styleCache = null;
-    }).catch(() => {});
-  }
-  get promise() {
-    return this._capability.promise;
-  }
-  cancel() {
-    this._canceled = true;
-    const abortEx = new AbortException("TextLayer task cancelled.");
-    this.#reader?.cancel(abortEx).catch(() => {});
-    this.#reader = null;
-    this._capability.reject(abortEx);
-  }
-  #processItems(items, lang) {
-    if (this.#disableProcessItems) {
-      return;
-    }
-    if (!this._layoutTextParams.ctx) {
-      this._textDivProperties.set(this._rootContainer, {
-        lang
-      });
-      this._layoutTextParams.ctx = getCtx(lang);
-    }
-    const textDivs = this._textDivs,
-      textContentItemsStr = this._textContentItemsStr;
-    for (const item of items) {
-      if (textDivs.length > MAX_TEXT_DIVS_TO_RENDER) {
-        warn("Ignoring additional textDivs for performance reasons.");
-        this.#disableProcessItems = true;
-        return;
-      }
-      if (item.str === undefined) {
-        if (item.type === "beginMarkedContentProps" || item.type === "beginMarkedContent") {
-          const parent = this._container;
-          this._container = document.createElement("span");
-          this._container.classList.add("markedContent");
-          if (item.id !== null) {
-            this._container.setAttribute("id", `${item.id}`);
-          }
-          parent.append(this._container);
-        } else if (item.type === "endMarkedContent") {
-          this._container = this._container.parentNode;
-        }
-        continue;
-      }
-      textContentItemsStr.push(item.str);
-      this.#appendText(item, lang);
-    }
-  }
-  #appendText(geom, lang) {
-    const textDiv = document.createElement("span");
-    const textDivProperties = {
-      angle: 0,
-      canvasWidth: 0,
-      hasText: geom.str !== "",
-      hasEOL: geom.hasEOL,
-      fontSize: 0
-    };
-    this._textDivs.push(textDiv);
-    const tx = Util.transform(this._transform, geom.transform);
-    let angle = Math.atan2(tx[1], tx[0]);
-    const style = this._styleCache[geom.fontName];
-    if (style.vertical) {
-      angle += Math.PI / 2;
-    }
-    const fontFamily = this._fontInspectorEnabled && style.fontSubstitution || style.fontFamily;
-    const fontHeight = Math.hypot(tx[2], tx[3]);
-    const fontAscent = fontHeight * getAscent(fontFamily, lang);
-    let left, top;
-    if (angle === 0) {
-      left = tx[4];
-      top = tx[5] - fontAscent;
-    } else {
-      left = tx[4] + fontAscent * Math.sin(angle);
-      top = tx[5] - fontAscent * Math.cos(angle);
-    }
-    const scaleFactorStr = "calc(var(--scale-factor)*";
-    const divStyle = textDiv.style;
-    if (this._container === this._rootContainer) {
-      divStyle.left = `${(100 * left / this._pageWidth).toFixed(2)}%`;
-      divStyle.top = `${(100 * top / this._pageHeight).toFixed(2)}%`;
-    } else {
-      divStyle.left = `${scaleFactorStr}${left.toFixed(2)}px)`;
-      divStyle.top = `${scaleFactorStr}${top.toFixed(2)}px)`;
-    }
-    divStyle.fontSize = `${scaleFactorStr}${fontHeight.toFixed(2)}px)`;
-    divStyle.fontFamily = fontFamily;
-    textDivProperties.fontSize = fontHeight;
-    textDiv.setAttribute("role", "presentation");
-    textDiv.textContent = geom.str;
-    textDiv.dir = geom.dir;
-    if (this._fontInspectorEnabled) {
-      textDiv.dataset.fontName = style.fontSubstitutionLoadedName || geom.fontName;
-    }
-    if (angle !== 0) {
-      textDivProperties.angle = angle * (180 / Math.PI);
-    }
-    let shouldScaleText = false;
-    if (geom.str.length > 1) {
-      shouldScaleText = true;
-    } else if (geom.str !== " " && geom.transform[0] !== geom.transform[3]) {
-      const absScaleX = Math.abs(geom.transform[0]),
-        absScaleY = Math.abs(geom.transform[3]);
-      if (absScaleX !== absScaleY && Math.max(absScaleX, absScaleY) / Math.min(absScaleX, absScaleY) > 1.5) {
-        shouldScaleText = true;
-      }
-    }
-    if (shouldScaleText) {
-      textDivProperties.canvasWidth = style.vertical ? geom.height : geom.width;
-    }
-    this._textDivProperties.set(textDiv, textDivProperties);
-    this.#layoutText(textDiv, textDivProperties);
-  }
-  #layoutText(textDiv, textDivProperties) {
-    this._layoutTextParams.div = textDiv;
-    this._layoutTextParams.properties = textDivProperties;
-    layout(this._layoutTextParams);
-    if (textDivProperties.hasText) {
-      this._container.append(textDiv);
-    }
-    if (textDivProperties.hasEOL) {
-      const br = document.createElement("br");
-      br.setAttribute("role", "presentation");
-      this._container.append(br);
-    }
-  }
-  _render() {
-    const styleCache = this._styleCache;
-    const pump = () => {
-      this.#reader.read().then(({
-        value,
-        done
-      }) => {
-        if (done) {
-          this._capability.resolve();
-          return;
-        }
-        Object.assign(styleCache, value.styles);
-        this.#processItems(value.items, value.lang);
-        pump();
-      }, this._capability.reject);
-    };
-    this.#reader = this.#textContentSource.getReader();
-    pump();
-  }
-}
-function renderTextLayer(params) {
-  const task = new TextLayerRenderTask(params);
-  task._render();
-  return task;
-}
-function updateTextLayer({
-  container,
-  viewport,
-  textDivs,
-  textDivProperties,
-  mustRotate = true,
-  mustRescale = true
-}) {
-  if (mustRotate) {
-    setLayerDimensions(container, {
-      rotation: viewport.rotation
-    });
-  }
-  if (mustRescale) {
-    const ctx = getCtx(textDivProperties.get(container)?.lang);
-    const scale = viewport.scale * (globalThis.devicePixelRatio || 1);
-    const params = {
-      prevFontSize: null,
-      prevFontFamily: null,
-      div: null,
-      scale,
-      properties: null,
-      ctx
-    };
-    for (const div of textDivs) {
-      params.properties = textDivProperties.get(div);
-      params.div = div;
-      layout(params);
-    }
-  }
-}
-
 ;// CONCATENATED MODULE: ./src/display/worker_options.js
 class GlobalWorkerOptions {
   static #port = null;
@@ -10762,6 +10557,390 @@ class PDFNodeStreamFsRangeReader extends BaseRangeReader {
   }
 }
 
+;// CONCATENATED MODULE: ./src/display/text_layer.js
+
+
+const MAX_TEXT_DIVS_TO_RENDER = 100000;
+const DEFAULT_FONT_SIZE = 30;
+const DEFAULT_FONT_ASCENT = 0.8;
+class TextLayer {
+  #capability = Promise.withResolvers();
+  #container = null;
+  #disableProcessItems = false;
+  #fontInspectorEnabled = !!globalThis.FontInspector?.enabled;
+  #lang = null;
+  #layoutTextParams = null;
+  #pageHeight = 0;
+  #pageWidth = 0;
+  #reader = null;
+  #rootContainer = null;
+  #rotation = 0;
+  #scale = 0;
+  #styleCache = Object.create(null);
+  #textContentItemsStr = [];
+  #textContentSource = null;
+  #textDivs = [];
+  #textDivProperties = new WeakMap();
+  #transform = null;
+  static #ascentCache = new Map();
+  static #canvasContexts = new Map();
+  static #pendingTextLayers = new Set();
+  constructor({
+    textContentSource,
+    container,
+    viewport
+  }) {
+    if (textContentSource instanceof ReadableStream) {
+      this.#textContentSource = textContentSource;
+    } else if (typeof textContentSource === "object") {
+      this.#textContentSource = new ReadableStream({
+        start(controller) {
+          controller.enqueue(textContentSource);
+          controller.close();
+        }
+      });
+    } else {
+      throw new Error('No "textContentSource" parameter specified.');
+    }
+    this.#container = this.#rootContainer = container;
+    this.#scale = viewport.scale * (globalThis.devicePixelRatio || 1);
+    this.#rotation = viewport.rotation;
+    this.#layoutTextParams = {
+      prevFontSize: null,
+      prevFontFamily: null,
+      div: null,
+      properties: null,
+      ctx: null
+    };
+    const {
+      pageWidth,
+      pageHeight,
+      pageX,
+      pageY
+    } = viewport.rawDims;
+    this.#transform = [1, 0, 0, -1, -pageX, pageY + pageHeight];
+    this.#pageWidth = pageWidth;
+    this.#pageHeight = pageHeight;
+    setLayerDimensions(container, viewport);
+    this.#capability.promise.catch(() => {}).then(() => {
+      TextLayer.#pendingTextLayers.delete(this);
+      this.#layoutTextParams = null;
+      this.#styleCache = null;
+    });
+  }
+  render() {
+    const pump = () => {
+      this.#reader.read().then(({
+        value,
+        done
+      }) => {
+        if (done) {
+          this.#capability.resolve();
+          return;
+        }
+        this.#lang ??= value.lang;
+        Object.assign(this.#styleCache, value.styles);
+        this.#processItems(value.items);
+        pump();
+      }, this.#capability.reject);
+    };
+    this.#reader = this.#textContentSource.getReader();
+    TextLayer.#pendingTextLayers.add(this);
+    pump();
+    return this.#capability.promise;
+  }
+  update({
+    viewport,
+    onBefore = null
+  }) {
+    const scale = viewport.scale * (globalThis.devicePixelRatio || 1);
+    const rotation = viewport.rotation;
+    if (rotation !== this.#rotation) {
+      onBefore?.();
+      this.#rotation = rotation;
+      setLayerDimensions(this.#rootContainer, {
+        rotation
+      });
+    }
+    if (scale !== this.#scale) {
+      onBefore?.();
+      this.#scale = scale;
+      const params = {
+        prevFontSize: null,
+        prevFontFamily: null,
+        div: null,
+        properties: null,
+        ctx: TextLayer.#getCtx(this.#lang)
+      };
+      for (const div of this.#textDivs) {
+        params.properties = this.#textDivProperties.get(div);
+        params.div = div;
+        this.#layout(params);
+      }
+    }
+  }
+  cancel() {
+    const abortEx = new AbortException("TextLayer task cancelled.");
+    this.#reader?.cancel(abortEx).catch(() => {});
+    this.#reader = null;
+    this.#capability.reject(abortEx);
+  }
+  get textDivs() {
+    return this.#textDivs;
+  }
+  get textContentItemsStr() {
+    return this.#textContentItemsStr;
+  }
+  #processItems(items) {
+    if (this.#disableProcessItems) {
+      return;
+    }
+    this.#layoutTextParams.ctx ||= TextLayer.#getCtx(this.#lang);
+    const textDivs = this.#textDivs,
+      textContentItemsStr = this.#textContentItemsStr;
+    for (const item of items) {
+      if (textDivs.length > MAX_TEXT_DIVS_TO_RENDER) {
+        warn("Ignoring additional textDivs for performance reasons.");
+        this.#disableProcessItems = true;
+        return;
+      }
+      if (item.str === undefined) {
+        if (item.type === "beginMarkedContentProps" || item.type === "beginMarkedContent") {
+          const parent = this.#container;
+          this.#container = document.createElement("span");
+          this.#container.classList.add("markedContent");
+          if (item.id !== null) {
+            this.#container.setAttribute("id", `${item.id}`);
+          }
+          parent.append(this.#container);
+        } else if (item.type === "endMarkedContent") {
+          this.#container = this.#container.parentNode;
+        }
+        continue;
+      }
+      textContentItemsStr.push(item.str);
+      this.#appendText(item);
+    }
+  }
+  #appendText(geom) {
+    const textDiv = document.createElement("span");
+    const textDivProperties = {
+      angle: 0,
+      canvasWidth: 0,
+      hasText: geom.str !== "",
+      hasEOL: geom.hasEOL,
+      fontSize: 0
+    };
+    this.#textDivs.push(textDiv);
+    const tx = Util.transform(this.#transform, geom.transform);
+    let angle = Math.atan2(tx[1], tx[0]);
+    const style = this.#styleCache[geom.fontName];
+    if (style.vertical) {
+      angle += Math.PI / 2;
+    }
+    const fontFamily = this.#fontInspectorEnabled && style.fontSubstitution || style.fontFamily;
+    const fontHeight = Math.hypot(tx[2], tx[3]);
+    const fontAscent = fontHeight * TextLayer.#getAscent(fontFamily, this.#lang);
+    let left, top;
+    if (angle === 0) {
+      left = tx[4];
+      top = tx[5] - fontAscent;
+    } else {
+      left = tx[4] + fontAscent * Math.sin(angle);
+      top = tx[5] - fontAscent * Math.cos(angle);
+    }
+    const scaleFactorStr = "calc(var(--scale-factor)*";
+    const divStyle = textDiv.style;
+    if (this.#container === this.#rootContainer) {
+      divStyle.left = `${(100 * left / this.#pageWidth).toFixed(2)}%`;
+      divStyle.top = `${(100 * top / this.#pageHeight).toFixed(2)}%`;
+    } else {
+      divStyle.left = `${scaleFactorStr}${left.toFixed(2)}px)`;
+      divStyle.top = `${scaleFactorStr}${top.toFixed(2)}px)`;
+    }
+    divStyle.fontSize = `${scaleFactorStr}${fontHeight.toFixed(2)}px)`;
+    divStyle.fontFamily = fontFamily;
+    textDivProperties.fontSize = fontHeight;
+    textDiv.setAttribute("role", "presentation");
+    textDiv.textContent = geom.str;
+    textDiv.dir = geom.dir;
+    if (this.#fontInspectorEnabled) {
+      textDiv.dataset.fontName = style.fontSubstitutionLoadedName || geom.fontName;
+    }
+    if (angle !== 0) {
+      textDivProperties.angle = angle * (180 / Math.PI);
+    }
+    let shouldScaleText = false;
+    if (geom.str.length > 1) {
+      shouldScaleText = true;
+    } else if (geom.str !== " " && geom.transform[0] !== geom.transform[3]) {
+      const absScaleX = Math.abs(geom.transform[0]),
+        absScaleY = Math.abs(geom.transform[3]);
+      if (absScaleX !== absScaleY && Math.max(absScaleX, absScaleY) / Math.min(absScaleX, absScaleY) > 1.5) {
+        shouldScaleText = true;
+      }
+    }
+    if (shouldScaleText) {
+      textDivProperties.canvasWidth = style.vertical ? geom.height : geom.width;
+    }
+    this.#textDivProperties.set(textDiv, textDivProperties);
+    this.#layoutTextParams.div = textDiv;
+    this.#layoutTextParams.properties = textDivProperties;
+    this.#layout(this.#layoutTextParams);
+    if (textDivProperties.hasText) {
+      this.#container.append(textDiv);
+    }
+    if (textDivProperties.hasEOL) {
+      const br = document.createElement("br");
+      br.setAttribute("role", "presentation");
+      this.#container.append(br);
+    }
+  }
+  #layout(params) {
+    const {
+      div,
+      properties,
+      ctx,
+      prevFontSize,
+      prevFontFamily
+    } = params;
+    const {
+      style
+    } = div;
+    let transform = "";
+    if (properties.canvasWidth !== 0 && properties.hasText) {
+      const {
+        fontFamily
+      } = style;
+      const {
+        canvasWidth,
+        fontSize
+      } = properties;
+      if (prevFontSize !== fontSize || prevFontFamily !== fontFamily) {
+        ctx.font = `${fontSize * this.#scale}px ${fontFamily}`;
+        params.prevFontSize = fontSize;
+        params.prevFontFamily = fontFamily;
+      }
+      const {
+        width
+      } = ctx.measureText(div.textContent);
+      if (width > 0) {
+        transform = `scaleX(${canvasWidth * this.#scale / width})`;
+      }
+    }
+    if (properties.angle !== 0) {
+      transform = `rotate(${properties.angle}deg) ${transform}`;
+    }
+    if (transform.length > 0) {
+      style.transform = transform;
+    }
+  }
+  static cleanup() {
+    if (this.#pendingTextLayers.size > 0) {
+      return;
+    }
+    this.#ascentCache.clear();
+    for (const {
+      canvas
+    } of this.#canvasContexts.values()) {
+      canvas.remove();
+    }
+    this.#canvasContexts.clear();
+  }
+  static #getCtx(lang = null) {
+    let canvasContext = this.#canvasContexts.get(lang ||= "");
+    if (!canvasContext) {
+      const canvas = document.createElement("canvas");
+      canvas.className = "hiddenCanvasElement";
+      canvas.lang = lang;
+      document.body.append(canvas);
+      canvasContext = canvas.getContext("2d", {
+        alpha: false,
+        willReadFrequently: true
+      });
+      this.#canvasContexts.set(lang, canvasContext);
+    }
+    return canvasContext;
+  }
+  static #getAscent(fontFamily, lang) {
+    const cachedAscent = this.#ascentCache.get(fontFamily);
+    if (cachedAscent) {
+      return cachedAscent;
+    }
+    const ctx = this.#getCtx(lang);
+    const savedFont = ctx.font;
+    ctx.canvas.width = ctx.canvas.height = DEFAULT_FONT_SIZE;
+    ctx.font = `${DEFAULT_FONT_SIZE}px ${fontFamily}`;
+    const metrics = ctx.measureText("");
+    let ascent = metrics.fontBoundingBoxAscent;
+    let descent = Math.abs(metrics.fontBoundingBoxDescent);
+    if (ascent) {
+      const ratio = ascent / (ascent + descent);
+      this.#ascentCache.set(fontFamily, ratio);
+      ctx.canvas.width = ctx.canvas.height = 0;
+      ctx.font = savedFont;
+      return ratio;
+    }
+    ctx.strokeStyle = "red";
+    ctx.clearRect(0, 0, DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE);
+    ctx.strokeText("g", 0, 0);
+    let pixels = ctx.getImageData(0, 0, DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE).data;
+    descent = 0;
+    for (let i = pixels.length - 1 - 3; i >= 0; i -= 4) {
+      if (pixels[i] > 0) {
+        descent = Math.ceil(i / 4 / DEFAULT_FONT_SIZE);
+        break;
+      }
+    }
+    ctx.clearRect(0, 0, DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE);
+    ctx.strokeText("A", 0, DEFAULT_FONT_SIZE);
+    pixels = ctx.getImageData(0, 0, DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE).data;
+    ascent = 0;
+    for (let i = 0, ii = pixels.length; i < ii; i += 4) {
+      if (pixels[i] > 0) {
+        ascent = DEFAULT_FONT_SIZE - Math.floor(i / 4 / DEFAULT_FONT_SIZE);
+        break;
+      }
+    }
+    ctx.canvas.width = ctx.canvas.height = 0;
+    ctx.font = savedFont;
+    const ratio = ascent ? ascent / (ascent + descent) : DEFAULT_FONT_ASCENT;
+    this.#ascentCache.set(fontFamily, ratio);
+    return ratio;
+  }
+}
+function renderTextLayer() {
+  deprecated("`renderTextLayer`, please use `TextLayer` instead.");
+  const {
+    textContentSource,
+    container,
+    viewport,
+    ...rest
+  } = arguments[0];
+  const restKeys = Object.keys(rest);
+  if (restKeys.length > 0) {
+    warn("Ignoring `renderTextLayer` parameters: " + restKeys.join(", "));
+  }
+  const textLayer = new TextLayer({
+    textContentSource,
+    container,
+    viewport
+  });
+  const {
+    textDivs,
+    textContentItemsStr
+  } = textLayer;
+  const promise = textLayer.render();
+  return {
+    promise,
+    textDivs,
+    textContentItemsStr
+  };
+}
+function updateTextLayer() {
+  deprecated("`updateTextLayer`, please use `TextLayer` instead.");
+}
+
 ;// CONCATENATED MODULE: ./src/display/xfa_text.js
 class XfaText {
   static textContent(xfa) {
@@ -10829,7 +11008,7 @@ const DefaultCanvasFactory = isNodeJS ? NodeCanvasFactory : DOMCanvasFactory;
 const DefaultCMapReaderFactory = isNodeJS ? NodeCMapReaderFactory : DOMCMapReaderFactory;
 const DefaultFilterFactory = isNodeJS ? NodeFilterFactory : DOMFilterFactory;
 const DefaultStandardFontDataFactory = isNodeJS ? NodeStandardFontDataFactory : DOMStandardFontDataFactory;
-function getDocument(src) {
+function getDocument(src = {}) {
   if (typeof src === "string" || src instanceof URL) {
     src = {
       url: src
@@ -10838,12 +11017,6 @@ function getDocument(src) {
     src = {
       data: src
     };
-  }
-  if (typeof src !== "object") {
-    throw new Error("Invalid parameter in getDocument, need parameter object.");
-  }
-  if (!src.url && !src.data && !src.range) {
-    throw new Error("Invalid parameter object: need either .data, .range or .url");
   }
   const task = new PDFDocumentLoadingTask();
   const {
@@ -10877,11 +11050,13 @@ function getDocument(src) {
   const disableStream = src.disableStream === true;
   const disableAutoFetch = src.disableAutoFetch === true;
   const pdfBug = src.pdfBug === true;
+  const enableHWA = src.enableHWA === true;
   const length = rangeTransport ? rangeTransport.length : src.length ?? NaN;
   const useSystemFonts = typeof src.useSystemFonts === "boolean" ? src.useSystemFonts : !isNodeJS && !disableFontFace;
   const useWorkerFetch = typeof src.useWorkerFetch === "boolean" ? src.useWorkerFetch : CMapReaderFactory === DOMCMapReaderFactory && StandardFontDataFactory === DOMStandardFontDataFactory && cMapUrl && standardFontDataUrl && isValidFetchUrl(cMapUrl, document.baseURI) && isValidFetchUrl(standardFontDataUrl, document.baseURI);
   const canvasFactory = src.canvasFactory || new DefaultCanvasFactory({
-    ownerDocument
+    ownerDocument,
+    enableHWA
   });
   const filterFactory = src.filterFactory || new DefaultFilterFactory({
     docId,
@@ -10912,7 +11087,7 @@ function getDocument(src) {
   }
   const docParams = {
     docId,
-    apiVersion: "4.3.100",
+    apiVersion: "4.4.151",
     data,
     password,
     disableAutoFetch,
@@ -10936,11 +11111,13 @@ function getDocument(src) {
   const transportParams = {
     disableFontFace,
     fontExtraProperties,
-    enableXfa,
     ownerDocument,
-    disableAutoFetch,
     pdfBug,
-    styleElement
+    styleElement,
+    loadingParams: {
+      disableAutoFetch,
+      enableXfa
+    }
   };
   worker.promise.then(function () {
     if (task.destroyed) {
@@ -10957,6 +11134,9 @@ function getDocument(src) {
         disableStream
       });
     } else if (!data) {
+      if (!url) {
+        throw new Error("getDocument - no `url` parameter provided.");
+      }
       const createPDFNetworkStream = params => {
         if (isNodeJS) {
           const isFetchSupported = function () {
@@ -11747,6 +11927,12 @@ class PDFWorker {
     }
     return this._readyCapability.promise;
   }
+  #resolve() {
+    this._readyCapability.resolve();
+    this._messageHandler.send("configure", {
+      verbosity: this.verbosity
+    });
+  }
   get port() {
     return this._port;
   }
@@ -11757,81 +11943,73 @@ class PDFWorker {
     this._port = port;
     this._messageHandler = new MessageHandler("main", "worker", port);
     this._messageHandler.on("ready", function () {});
-    this._readyCapability.resolve();
-    this._messageHandler.send("configure", {
-      verbosity: this.verbosity
-    });
+    this.#resolve();
   }
   _initialize() {
-    if (!PDFWorkerUtil.isWorkerDisabled && !PDFWorker.#mainThreadWorkerMessageHandler) {
-      let {
-        workerSrc
-      } = PDFWorker;
-      try {
-        if (!PDFWorkerUtil.isSameOrigin(window.location.href, workerSrc)) {
-          workerSrc = PDFWorkerUtil.createCDNWrapper(new URL(workerSrc, window.location).href);
-        }
-        const worker = new Worker(workerSrc, {
-          type: "module"
-        });
-        const messageHandler = new MessageHandler("main", "worker", worker);
-        const terminateEarly = () => {
-          worker.removeEventListener("error", onWorkerError);
-          messageHandler.destroy();
-          worker.terminate();
-          if (this.destroyed) {
-            this._readyCapability.reject(new Error("Worker was destroyed"));
-          } else {
-            this._setupFakeWorker();
-          }
-        };
-        const onWorkerError = () => {
-          if (!this._webWorker) {
-            terminateEarly();
-          }
-        };
-        worker.addEventListener("error", onWorkerError);
-        messageHandler.on("test", data => {
-          worker.removeEventListener("error", onWorkerError);
-          if (this.destroyed) {
-            terminateEarly();
-            return;
-          }
-          if (data) {
-            this._messageHandler = messageHandler;
-            this._port = worker;
-            this._webWorker = worker;
-            this._readyCapability.resolve();
-            messageHandler.send("configure", {
-              verbosity: this.verbosity
-            });
-          } else {
-            this._setupFakeWorker();
-            messageHandler.destroy();
-            worker.terminate();
-          }
-        });
-        messageHandler.on("ready", data => {
-          worker.removeEventListener("error", onWorkerError);
-          if (this.destroyed) {
-            terminateEarly();
-            return;
-          }
-          try {
-            sendTest();
-          } catch {
-            this._setupFakeWorker();
-          }
-        });
-        const sendTest = () => {
-          const testObj = new Uint8Array();
-          messageHandler.send("test", testObj, [testObj.buffer]);
-        };
-        sendTest();
-        return;
-      } catch {
-        info("The worker has been disabled.");
+    if (PDFWorkerUtil.isWorkerDisabled || PDFWorker.#mainThreadWorkerMessageHandler) {
+      this._setupFakeWorker();
+      return;
+    }
+    let {
+      workerSrc
+    } = PDFWorker;
+    try {
+      if (!PDFWorkerUtil.isSameOrigin(window.location.href, workerSrc)) {
+        workerSrc = PDFWorkerUtil.createCDNWrapper(new URL(workerSrc, window.location).href);
       }
+      const worker = new Worker(workerSrc, {
+        type: "module"
+      });
+      const messageHandler = new MessageHandler("main", "worker", worker);
+      const terminateEarly = () => {
+        ac.abort();
+        messageHandler.destroy();
+        worker.terminate();
+        if (this.destroyed) {
+          this._readyCapability.reject(new Error("Worker was destroyed"));
+        } else {
+          this._setupFakeWorker();
+        }
+      };
+      const ac = new AbortController();
+      worker.addEventListener("error", () => {
+        if (!this._webWorker) {
+          terminateEarly();
+        }
+      }, {
+        signal: ac.signal
+      });
+      messageHandler.on("test", data => {
+        ac.abort();
+        if (this.destroyed || !data) {
+          terminateEarly();
+          return;
+        }
+        this._messageHandler = messageHandler;
+        this._port = worker;
+        this._webWorker = worker;
+        this.#resolve();
+      });
+      messageHandler.on("ready", data => {
+        ac.abort();
+        if (this.destroyed) {
+          terminateEarly();
+          return;
+        }
+        try {
+          sendTest();
+        } catch {
+          this._setupFakeWorker();
+        }
+      });
+      const sendTest = () => {
+        const testObj = new Uint8Array();
+        messageHandler.send("test", testObj, [testObj.buffer]);
+      };
+      sendTest();
+      return;
+    } catch {
+      info("The worker has been disabled.");
     }
     this._setupFakeWorker();
   }
@@ -11850,12 +12028,8 @@ class PDFWorker {
       const id = `fake${PDFWorkerUtil.fakeWorkerId++}`;
       const workerHandler = new MessageHandler(id + "_worker", id, port);
       WorkerMessageHandler.setup(workerHandler, port);
-      const messageHandler = new MessageHandler(id, id + "_worker", port);
-      this._messageHandler = messageHandler;
-      this._readyCapability.resolve();
-      messageHandler.send("configure", {
-        verbosity: this.verbosity
-      });
+      this._messageHandler = new MessageHandler(id, id + "_worker", port);
+      this.#resolve();
     }).catch(reason => {
       this._readyCapability.reject(new Error(`Setting up fake worker failed: "${reason.message}".`));
     });
@@ -11924,6 +12098,7 @@ class WorkerTransport {
       ownerDocument: params.ownerDocument,
       styleElement: params.styleElement
     });
+    this.loadingParams = params.loadingParams;
     this._params = params;
     this.canvasFactory = factory.canvasFactory;
     this.filterFactory = factory.filterFactory;
@@ -12014,7 +12189,7 @@ class WorkerTransport {
       this.fontLoader.clear();
       this.#methodPromises.clear();
       this.filterFactory.destroy();
-      cleanupTextLayer();
+      TextLayer.cleanup();
       this._networkStream?.cancelAllRequests(new AbortException("Worker was terminated."));
       if (this.messageHandler) {
         this.messageHandler.destroy();
@@ -12458,7 +12633,7 @@ class WorkerTransport {
     }
     this.#methodPromises.clear();
     this.filterFactory.destroy(true);
-    cleanupTextLayer();
+    TextLayer.cleanup();
   }
   cachedPageNumber(ref) {
     if (!isRefProxy(ref)) {
@@ -12466,16 +12641,6 @@ class WorkerTransport {
     }
     const refStr = ref.gen === 0 ? `${ref.num}R` : `${ref.num}R${ref.gen}`;
     return this.#pageRefCache.get(refStr) ?? null;
-  }
-  get loadingParams() {
-    const {
-      disableAutoFetch,
-      enableXfa
-    } = this._params;
-    return shadow(this, "loadingParams", {
-      disableAutoFetch,
-      enableXfa
-    });
   }
 }
 const INITIAL_DATA = Symbol("INITIAL_DATA");
@@ -12797,8 +12962,8 @@ class InternalRenderTask {
     }
   }
 }
-const version = "4.3.100";
-const build = "0cd5252aa";
+const version = "4.4.151";
+const build = "1d357f742";
 
 ;// CONCATENATED MODULE: ./src/shared/scripting_utils.js
 function makeColorComp(n) {
@@ -13149,6 +13314,7 @@ class AnnotationElementFactory {
 class AnnotationElement {
   #updates = null;
   #hasBorder = false;
+  #popupElement = null;
   constructor(parameters, {
     isRenderable = false,
     ignoreBorder = false,
@@ -13197,12 +13363,14 @@ class AnnotationElement {
     if (rect) {
       this.#setRectEdited(rect);
     }
+    this.#popupElement?.popup.updateEdited(params);
   }
   resetEdited() {
     if (!this.#updates) {
       return;
     }
     this.#setRectEdited(this.#updates.rect);
+    this.#popupElement?.popup.resetEdited();
     this.#updates = null;
   }
   #setRectEdited(rect) {
@@ -13478,15 +13646,9 @@ class AnnotationElement {
     if (!quadPoints) {
       return;
     }
-    const [rectBlX, rectBlY, rectTrX, rectTrY] = this.data.rect;
-    if (quadPoints.length === 1) {
-      const [, {
-        x: trX,
-        y: trY
-      }, {
-        x: blX,
-        y: blY
-      }] = quadPoints[0];
+    const [rectBlX, rectBlY, rectTrX, rectTrY] = this.data.rect.map(x => Math.fround(x));
+    if (quadPoints.length === 8) {
+      const [trX, trY, blX, blY] = quadPoints.subarray(2, 6);
       if (rectTrX === trX && rectTrY === trY && rectBlX === blX && rectBlY === blY) {
         return;
       }
@@ -13520,13 +13682,11 @@ class AnnotationElement {
     clipPath.setAttribute("id", id);
     clipPath.setAttribute("clipPathUnits", "objectBoundingBox");
     defs.append(clipPath);
-    for (const [, {
-      x: trX,
-      y: trY
-    }, {
-      x: blX,
-      y: blY
-    }] of quadPoints) {
+    for (let i = 2, ii = quadPoints.length; i < ii; i += 8) {
+      const trX = quadPoints[i];
+      const trY = quadPoints[i + 1];
+      const blX = quadPoints[i + 2];
+      const blY = quadPoints[i + 3];
       const rect = svgFactory.createElement("rect");
       const x = (blX - rectBlX) / width;
       const y = (rectTrY - trY) / height;
@@ -13588,7 +13748,7 @@ class AnnotationElement {
     } else {
       data.contentsObj.str = finalContent;
     }
-    const popup = new PopupAnnotationElement({
+    const popup = this.#popupElement = new PopupAnnotationElement({
       data: {
         color: data.color,
         titleObj: data.titleObj,
@@ -13603,12 +13763,10 @@ class AnnotationElement {
       parent: this.parent,
       elements: [this]
     });
-    let popup_render = popup.render();
-    this.parent.div.append(popup_render);
     wiserEventBus.on(magicWord, msg => {
       const startTime = Date.now();
       let linkHeaderDiv;
-      while (Date.now() - startTime < 2000) {
+      while (Date.now() - startTime < 1000) {
         linkHeaderDiv = document.getElementById(magicWord);
         if (linkHeaderDiv) {
           break;
@@ -13618,6 +13776,7 @@ class AnnotationElement {
         linkHeaderDiv.style.display = 'none';
       }
     });
+    this.parent.div.append(popup.render());
   }
   render() {
     unreachable("Abstract method `AnnotationElement.render` called");
@@ -14804,10 +14963,11 @@ class PopupAnnotationElement extends AnnotationElement {
       isRenderable: AnnotationElement._hasPopupData(data)
     });
     this.elements = elements;
+    this.popup = null;
   }
   render() {
     this.container.classList.add("popupAnnotation");
-    const popup = new PopupElement({
+    const popup = this.popup = new PopupElement({
       container: this.container,
       color: this.data.color,
       titleObj: this.data.titleObj,
@@ -14844,9 +15004,11 @@ class PopupElement {
   #parentRect = null;
   #pinned = false;
   #popup = null;
+  #position = null;
   #rect = null;
   #richText = null;
   #titleObj = null;
+  #updates = null;
   #wasVisible = false;
   constructor({
     container,
@@ -14890,19 +15052,6 @@ class PopupElement {
     if (this.#popup) {
       return;
     }
-    const {
-      page: {
-        view
-      },
-      viewport: {
-        rawDims: {
-          pageWidth,
-          pageHeight,
-          pageX,
-          pageY
-        }
-      }
-    } = this.#parent;
     const popup = this.#popup = document.createElement("div");
     popup.className = "popup";
     if (this.#color) {
@@ -14936,39 +15085,63 @@ class PopupElement {
       }));
       header.append(modificationDate);
     }
-    const contentsObj = this.#contentsObj;
-    const richText = this.#richText;
-    if (richText?.str && (!contentsObj?.str || contentsObj.str === richText.str)) {
+    const html = this.#html;
+    if (html) {
       XfaLayer.render({
-        xfaHtml: richText.html,
+        xfaHtml: html,
         intent: "richText",
         div: popup
       });
       popup.lastChild.classList.add("richText", "popupContent");
     } else {
-      const contents = this._formatContents(contentsObj);
+      const contents = this._formatContents(this.#contentsObj);
       popup.append(contents);
     }
-    let useParentRect = !!this.#parentRect;
-    let rect = useParentRect ? this.#parentRect : this.#rect;
-    for (const element of this.#elements) {
-      if (!rect || Util.intersect(element.data.rect, rect) !== null) {
-        rect = element.data.rect;
-        useParentRect = true;
-        break;
-      }
-    }
-    const normalizedRect = Util.normalizeRect([rect[0], view[3] - rect[1] + view[1], rect[2], view[3] - rect[3] + view[1]]);
-    const HORIZONTAL_SPACE_AFTER_ANNOTATION = 5;
-    const parentWidth = useParentRect ? rect[2] - rect[0] + HORIZONTAL_SPACE_AFTER_ANNOTATION : 0;
-    const popupLeft = normalizedRect[0] + parentWidth;
-    const popupTop = normalizedRect[1];
-    const {
-      style
-    } = this.#container;
-    style.left = `${100 * (popupLeft - pageX) / pageWidth}%`;
-    style.top = `${100 * (popupTop - pageY) / pageHeight}%`;
     this.#container.append(popup);
+  }
+  get #html() {
+    const richText = this.#richText;
+    const contentsObj = this.#contentsObj;
+    if (richText?.str && (!contentsObj?.str || contentsObj.str === richText.str)) {
+      return this.#richText.html || null;
+    }
+    return null;
+  }
+  get #fontSize() {
+    return this.#html?.attributes?.style?.fontSize || 0;
+  }
+  get #fontColor() {
+    return this.#html?.attributes?.style?.color || null;
+  }
+  #makePopupContent(text) {
+    const popupLines = [];
+    const popupContent = {
+      str: text,
+      html: {
+        name: "div",
+        attributes: {
+          dir: "auto"
+        },
+        children: [{
+          name: "p",
+          children: popupLines
+        }]
+      }
+    };
+    const lineAttributes = {
+      style: {
+        color: this.#fontColor,
+        fontSize: this.#fontSize ? `calc(${this.#fontSize}px * var(--scale-factor))` : ""
+      }
+    };
+    for (const line of text.split("\n")) {
+      popupLines.push({
+        name: "span",
+        value: line,
+        attributes: lineAttributes
+      });
+    }
+    return popupContent;
   }
   _formatContents({
     str,
@@ -14997,6 +15170,75 @@ class PopupElement {
       this.#toggle();
     }
   }
+  updateEdited({
+    rect,
+    popupContent
+  }) {
+    this.#updates ||= {
+      contentsObj: this.#contentsObj,
+      richText: this.#richText
+    };
+    if (rect) {
+      this.#position = null;
+    }
+    if (popupContent) {
+      this.#richText = this.#makePopupContent(popupContent);
+      this.#contentsObj = null;
+    }
+    this.#popup?.remove();
+    this.#popup = null;
+  }
+  resetEdited() {
+    if (!this.#updates) {
+      return;
+    }
+    ({
+      contentsObj: this.#contentsObj,
+      richText: this.#richText
+    } = this.#updates);
+    this.#updates = null;
+    this.#popup?.remove();
+    this.#popup = null;
+    this.#position = null;
+  }
+  #setPosition() {
+    if (this.#position !== null) {
+      return;
+    }
+    const {
+      page: {
+        view
+      },
+      viewport: {
+        rawDims: {
+          pageWidth,
+          pageHeight,
+          pageX,
+          pageY
+        }
+      }
+    } = this.#parent;
+    let useParentRect = !!this.#parentRect;
+    let rect = useParentRect ? this.#parentRect : this.#rect;
+    for (const element of this.#elements) {
+      if (!rect || Util.intersect(element.data.rect, rect) !== null) {
+        rect = element.data.rect;
+        useParentRect = true;
+        break;
+      }
+    }
+    const normalizedRect = Util.normalizeRect([rect[0], view[3] - rect[1] + view[1], rect[2], view[3] - rect[3] + view[1]]);
+    const HORIZONTAL_SPACE_AFTER_ANNOTATION = 5;
+    const parentWidth = useParentRect ? rect[2] - rect[0] + HORIZONTAL_SPACE_AFTER_ANNOTATION : 0;
+    const popupLeft = normalizedRect[0] + parentWidth;
+    const popupTop = normalizedRect[1];
+    this.#position = [100 * (popupLeft - pageX) / pageWidth, 100 * (popupTop - pageY) / pageHeight];
+    const {
+      style
+    } = this.#container;
+    style.left = `${this.#position[0]}%`;
+    style.top = `${this.#position[1]}%`;
+  }
   #toggle() {
     this.#pinned = !this.#pinned;
     if (this.#pinned) {
@@ -15014,6 +15256,7 @@ class PopupElement {
       this.render();
     }
     if (!this.isVisible) {
+      this.#setPosition();
       this.#container.hidden = false;
       this.#container.style.zIndex = parseInt(this.#container.style.zIndex) + 1000;
     } else if (this.#pinned) {
@@ -15038,6 +15281,9 @@ class PopupElement {
   maybeShow() {
     if (!this.#wasVisible) {
       return;
+    }
+    if (!this.#popup) {
+      this.#show();
     }
     this.#wasVisible = false;
     this.#container.hidden = false;
@@ -15207,27 +15453,37 @@ class PolylineAnnotationElement extends AnnotationElement {
   }
   render() {
     this.container.classList.add(this.containerClassName);
-    const data = this.data;
+    const {
+      data: {
+        rect,
+        vertices,
+        borderStyle,
+        popupRef
+      }
+    } = this;
+    if (!vertices) {
+      return this.container;
+    }
     const {
       width,
       height
-    } = getRectDims(data.rect);
+    } = getRectDims(rect);
     const svg = this.svgFactory.create(width, height, true);
     let points = [];
-    for (const coordinate of data.vertices) {
-      const x = coordinate.x - data.rect[0];
-      const y = data.rect[3] - coordinate.y;
-      points.push(x + "," + y);
+    for (let i = 0, ii = vertices.length; i < ii; i += 2) {
+      const x = vertices[i] - rect[0];
+      const y = rect[3] - vertices[i + 1];
+      points.push(`${x},${y}`);
     }
     points = points.join(" ");
     const polyline = this.#polyline = this.svgFactory.createElement(this.svgElementName);
     polyline.setAttribute("points", points);
-    polyline.setAttribute("stroke-width", data.borderStyle.width || 1);
+    polyline.setAttribute("stroke-width", borderStyle.width || 1);
     polyline.setAttribute("stroke", "transparent");
     polyline.setAttribute("fill", "transparent");
     svg.append(polyline);
     this.container.append(svg);
-    if (!data.popupRef && this.hasPopupData) {
+    if (!popupRef && this.hasPopupData) {
       this._createPopup();
     }
     return this.container;
@@ -15274,27 +15530,34 @@ class InkAnnotationElement extends AnnotationElement {
   }
   render() {
     this.container.classList.add(this.containerClassName);
-    const data = this.data;
+    const {
+      data: {
+        rect,
+        inkLists,
+        borderStyle,
+        popupRef
+      }
+    } = this;
     const {
       width,
       height
-    } = getRectDims(data.rect);
+    } = getRectDims(rect);
     const svg = this.svgFactory.create(width, height, true);
-    for (const inkList of data.inkLists) {
+    for (const inkList of inkLists) {
       let points = [];
-      for (const coordinate of inkList) {
-        const x = coordinate.x - data.rect[0];
-        const y = data.rect[3] - coordinate.y;
+      for (let i = 0, ii = inkList.length; i < ii; i += 2) {
+        const x = inkList[i] - rect[0];
+        const y = rect[3] - inkList[i + 1];
         points.push(`${x},${y}`);
       }
       points = points.join(" ");
       const polyline = this.svgFactory.createElement(this.svgElementName);
       this.#polylines.push(polyline);
       polyline.setAttribute("points", points);
-      polyline.setAttribute("stroke-width", data.borderStyle.width || 1);
+      polyline.setAttribute("stroke-width", borderStyle.width || 1);
       polyline.setAttribute("stroke", "transparent");
       polyline.setAttribute("fill", "transparent");
-      if (!data.popupRef && this.hasPopupData) {
+      if (!popupRef && this.hasPopupData) {
         this._createPopup();
       }
       svg.append(polyline);
@@ -15757,11 +16020,22 @@ class FreeTextEditor extends AnnotationEditor {
     this.editorDiv.contentEditable = true;
     this._isDraggable = false;
     this.div.removeAttribute("aria-activedescendant");
-    this.editorDiv.addEventListener("keydown", this.#boundEditorDivKeydown);
-    this.editorDiv.addEventListener("focus", this.#boundEditorDivFocus);
-    this.editorDiv.addEventListener("blur", this.#boundEditorDivBlur);
-    this.editorDiv.addEventListener("input", this.#boundEditorDivInput);
-    this.editorDiv.addEventListener("paste", this.#boundEditorDivPaste);
+    const signal = this._uiManager._signal;
+    this.editorDiv.addEventListener("keydown", this.#boundEditorDivKeydown, {
+      signal
+    });
+    this.editorDiv.addEventListener("focus", this.#boundEditorDivFocus, {
+      signal
+    });
+    this.editorDiv.addEventListener("blur", this.#boundEditorDivBlur, {
+      signal
+    });
+    this.editorDiv.addEventListener("input", this.#boundEditorDivInput, {
+      signal
+    });
+    this.editorDiv.addEventListener("paste", this.#boundEditorDivPaste, {
+      signal
+    });
   }
   disableEditMode() {
     if (!this.isInEditMode()) {
@@ -16196,7 +16470,8 @@ class FreeTextEditor extends AnnotationEditor {
     }
     const padding = FreeTextEditor._internalPadding * this.parentScale;
     annotation.updateEdited({
-      rect: this.getRect(padding, padding)
+      rect: this.getRect(padding, padding),
+      popupContent: this.#content
     });
     return content;
   }
@@ -16848,8 +17123,13 @@ class ColorPicker {
     button.tabIndex = "0";
     button.setAttribute("data-l10n-id", "pdfjs-editor-colorpicker-button");
     button.setAttribute("aria-haspopup", true);
-    button.addEventListener("click", this.#openDropdown.bind(this));
-    button.addEventListener("keydown", this.#boundKeyDown);
+    const signal = this.#uiManager._signal;
+    button.addEventListener("click", this.#openDropdown.bind(this), {
+      signal
+    });
+    button.addEventListener("keydown", this.#boundKeyDown, {
+      signal
+    });
     const swatch = this.#buttonSwatch = document.createElement("span");
     swatch.className = "swatch";
     swatch.setAttribute("aria-hidden", true);
@@ -16865,7 +17145,10 @@ class ColorPicker {
   }
   #getDropdownRoot() {
     const div = document.createElement("div");
-    div.addEventListener("contextmenu", noContextMenu);
+    const signal = this.#uiManager._signal;
+    div.addEventListener("contextmenu", noContextMenu, {
+      signal
+    });
     div.setAttribute("aria-multiselectable", false);
     div.setAttribute("aria-orientation", "vertical");
     div.setAttribute("data-l10n-id", "pdfjs-editor-colorpicker-dropdown");
@@ -16881,18 +17164,18 @@ class ColorPicker {
       swatch.style.backgroundColor = color;
       swatch.textContent = name;
       button.setAttribute("aria-selected", color === this.#defaultColor);
-      button.addEventListener("click", this.#colorSelect.bind(this, color));
+      button.addEventListener("click", this.#colorSelect.bind(this, color), {
+        signal
+      });
       div.append(button);
     }
-    div.addEventListener("keydown", this.#boundKeyDown);
+    div.addEventListener("keydown", this.#boundKeyDown, {
+      signal
+    });
     return div;
   }
   #colorSelect(color, event) {
     event.stopPropagation();
-    console.log("recipe for changing color");
-    console.log("source", this);
-    console.log("type", this.#type);
-    console.log("value", color);
     this.#eventBus.dispatch("switchannotationeditorparams", {
       source: this,
       type: this.#type,
@@ -16956,7 +17239,9 @@ class ColorPicker {
       return;
     }
     this.#dropdownWasFromKeyboard = event.detail === 0;
-    window.addEventListener("pointerdown", this.#boundPointerDown);
+    window.addEventListener("pointerdown", this.#boundPointerDown, {
+      signal: this.#uiManager._signal
+    });
     if (this.#dropdown) {
       this.#dropdown.classList.remove("hidden");
       return;
@@ -17438,7 +17723,9 @@ class HighlightEditor extends AnnotationEditor {
     if (this.#isFreeHighlight) {
       div.classList.add("free");
     } else {
-      this.div.addEventListener("keydown", this.#boundKeydown);
+      this.div.addEventListener("keydown", this.#boundKeydown, {
+        signal: this._uiManager._signal
+      });
     }
     const highlightDiv = this.#highlightDiv = document.createElement("div");
     div.append(highlightDiv);
@@ -17521,7 +17808,7 @@ class HighlightEditor extends AnnotationEditor {
     }
     const [pageWidth, pageHeight] = this.pageDimensions;
     const boxes = this.#boxes;
-    const quadPoints = new Array(boxes.length * 8);
+    const quadPoints = new Float32Array(boxes.length * 8);
     let i = 0;
     for (const {
       x,
@@ -17556,9 +17843,11 @@ class HighlightEditor extends AnnotationEditor {
     const pointerMove = e => {
       this.#highlightMove(parent, e);
     };
+    const signal = parent._signal;
     const pointerDownOptions = {
       capture: true,
-      passive: false
+      passive: false,
+      signal
     };
     const pointerDown = e => {
       e.preventDefault();
@@ -17572,11 +17861,19 @@ class HighlightEditor extends AnnotationEditor {
       window.removeEventListener("contextmenu", noContextMenu);
       this.#endHighlight(parent, e);
     };
-    window.addEventListener("blur", pointerUpCallback);
-    window.addEventListener("pointerup", pointerUpCallback);
+    window.addEventListener("blur", pointerUpCallback, {
+      signal
+    });
+    window.addEventListener("pointerup", pointerUpCallback, {
+      signal
+    });
     window.addEventListener("pointerdown", pointerDown, pointerDownOptions);
-    window.addEventListener("contextmenu", noContextMenu);
-    textLayer.addEventListener("pointermove", pointerMove);
+    window.addEventListener("contextmenu", noContextMenu, {
+      signal
+    });
+    textLayer.addEventListener("pointermove", pointerMove, {
+      signal
+    });
     this._freeHighlight = new FreeOutliner({
       x,
       y
@@ -17816,7 +18113,7 @@ class InkEditor extends AnnotationEditor {
       clearTimeout(this.#canvasContextMenuTimeoutId);
       this.#canvasContextMenuTimeoutId = null;
     }
-    this.#observer.disconnect();
+    this.#observer?.disconnect();
     this.#observer = null;
     super.remove();
   }
@@ -17840,7 +18137,9 @@ class InkEditor extends AnnotationEditor {
     }
     super.enableEditMode();
     this._isDraggable = false;
-    this.canvas.addEventListener("pointerdown", this.#boundCanvasPointerdown);
+    this.canvas.addEventListener("pointerdown", this.#boundCanvasPointerdown, {
+      signal: this._uiManager._signal
+    });
   }
   disableEditMode() {
     if (!this.isInEditMode() || this.canvas === null) {
@@ -17889,10 +18188,19 @@ class InkEditor extends AnnotationEditor {
     ctx.strokeStyle = `${color}${opacityToHex(opacity)}`;
   }
   #startDrawing(x, y) {
-    this.canvas.addEventListener("contextmenu", noContextMenu);
-    this.canvas.addEventListener("pointerleave", this.#boundCanvasPointerleave);
-    this.canvas.addEventListener("pointermove", this.#boundCanvasPointermove);
-    this.canvas.addEventListener("pointerup", this.#boundCanvasPointerup);
+    const signal = this._uiManager._signal;
+    this.canvas.addEventListener("contextmenu", noContextMenu, {
+      signal
+    });
+    this.canvas.addEventListener("pointerleave", this.#boundCanvasPointerleave, {
+      signal
+    });
+    this.canvas.addEventListener("pointermove", this.#boundCanvasPointermove, {
+      signal
+    });
+    this.canvas.addEventListener("pointerup", this.#boundCanvasPointerup, {
+      signal
+    });
     this.canvas.removeEventListener("pointerdown", this.#boundCanvasPointerdown);
     this.isEditing = true;
     if (!this.#isCanvasInitialized) {
@@ -18109,7 +18417,9 @@ class InkEditor extends AnnotationEditor {
     this.canvas.removeEventListener("pointerleave", this.#boundCanvasPointerleave);
     this.canvas.removeEventListener("pointermove", this.#boundCanvasPointermove);
     this.canvas.removeEventListener("pointerup", this.#boundCanvasPointerup);
-    this.canvas.addEventListener("pointerdown", this.#boundCanvasPointerdown);
+    this.canvas.addEventListener("pointerdown", this.#boundCanvasPointerdown, {
+      signal: this._uiManager._signal
+    });
     if (this.#canvasContextMenuTimeoutId) {
       clearTimeout(this.#canvasContextMenuTimeoutId);
     }
@@ -18137,6 +18447,12 @@ class InkEditor extends AnnotationEditor {
       }
     });
     this.#observer.observe(this.div);
+    this._uiManager._signal.addEventListener("abort", () => {
+      this.#observer?.disconnect();
+      this.#observer = null;
+    }, {
+      once: true
+    });
   }
   get isResizable() {
     return !this.isEmpty() && this.#disableEditing;
@@ -18541,6 +18857,7 @@ class StampEditor extends AnnotationEditor {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = StampEditor.supportedTypesStr;
+    const signal = this._uiManager._signal;
     this.#bitmapPromise = new Promise(resolve => {
       input.addEventListener("change", async () => {
         if (!input.files || input.files.length === 0) {
@@ -18551,10 +18868,14 @@ class StampEditor extends AnnotationEditor {
           this.#getBitmapFetched(data);
         }
         resolve();
+      }, {
+        signal
       });
       input.addEventListener("cancel", () => {
         this.remove();
         resolve();
+      }, {
+        signal
       });
     }).finally(() => this.#getBitmapDone());
     input.click();
@@ -18720,26 +19041,22 @@ class StampEditor extends AnnotationEditor {
       const offscreen = new OffscreenCanvas(width, height);
       const ctx = offscreen.getContext("2d");
       ctx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, 0, 0, width, height);
-      offscreen.convertToBlob().then(blob => {
-        const fileReader = new FileReader();
-        fileReader.onload = () => {
-          const url = fileReader.result;
-          this._uiManager.mlGuess({
-            service: "image-to-text",
-            request: {
-              imageData: url
-            }
-          }).then(response => {
-            const altText = response?.output || "";
-            if (this.parent && altText && !this.hasAltText()) {
-              this.altTextData = {
-                altText,
-                decorative: false
-              };
-            }
-          });
-        };
-        fileReader.readAsDataURL(blob);
+      this._uiManager.mlGuess({
+        service: "image-to-text",
+        request: {
+          data: ctx.getImageData(0, 0, width, height).data,
+          width,
+          height,
+          channels: 4
+        }
+      }).then(response => {
+        const altText = response?.output || "";
+        if (this.parent && altText && !this.hasAltText()) {
+          this.altTextData = {
+            altText,
+            decorative: false
+          };
+        }
       });
     }
     const ctx = canvas.getContext("2d");
@@ -18778,6 +19095,9 @@ class StampEditor extends AnnotationEditor {
     return structuredClone(this.#bitmap);
   }
   #createObserver() {
+    if (!this._uiManager._signal) {
+      return;
+    }
     this.#observer = new ResizeObserver(entries => {
       const rect = entries[0].contentRect;
       if (rect.width && rect.height) {
@@ -18785,6 +19105,12 @@ class StampEditor extends AnnotationEditor {
       }
     });
     this.#observer.observe(this.div);
+    this._uiManager._signal.addEventListener("abort", () => {
+      this.#observer?.disconnect();
+      this.#observer = null;
+    }, {
+      once: true
+    });
   }
   static deserialize(data, parent, uiManager) {
     if (data instanceof StampAnnotationElement) {
@@ -19097,7 +19423,9 @@ class AnnotationEditorLayer {
     this.div.tabIndex = -1;
     if (this.#textLayer?.div && !this.#boundTextLayerPointerDown) {
       this.#boundTextLayerPointerDown = this.#textLayerPointerDown.bind(this);
-      this.#textLayer.div.addEventListener("pointerdown", this.#boundTextLayerPointerDown);
+      this.#textLayer.div.addEventListener("pointerdown", this.#boundTextLayerPointerDown, {
+        signal: this.#uiManager._signal
+      });
       this.#textLayer.div.classList.add("highlighting");
     }
   }
@@ -19124,7 +19452,8 @@ class AnnotationEditorLayer {
       this.#textLayer.div.addEventListener("pointerup", () => {
         this.#textLayer.div.classList.remove("free");
       }, {
-        once: true
+        once: true,
+        signal: this.#uiManager._signal
       });
       event.preventDefault();
     }
@@ -19133,10 +19462,15 @@ class AnnotationEditorLayer {
     if (this.#boundPointerdown) {
       return;
     }
+    const signal = this.#uiManager._signal;
     this.#boundPointerdown = this.pointerdown.bind(this);
     this.#boundPointerup = this.pointerup.bind(this);
-    this.div.addEventListener("pointerdown", this.#boundPointerdown);
-    this.div.addEventListener("pointerup", this.#boundPointerup);
+    this.div.addEventListener("pointerdown", this.#boundPointerdown, {
+      signal
+    });
+    this.div.addEventListener("pointerup", this.#boundPointerup, {
+      signal
+    });
   }
   disableClick() {
     if (!this.#boundPointerdown) {
@@ -19221,7 +19555,8 @@ class AnnotationEditorLayer {
           editor.div.addEventListener("focusin", () => {
             editor._focusEventsAllowed = true;
           }, {
-            once: true
+            once: true,
+            signal: this.#uiManager._signal
           });
           activeElement.focus();
         } else {
@@ -19256,6 +19591,9 @@ class AnnotationEditorLayer {
   }
   get #currentEditorType() {
     return AnnotationEditorLayer.#editorTypes.get(this.#uiManager.getMode());
+  }
+  get _signal() {
+    return this.#uiManager._signal;
   }
   #createNewEditor(params) {
     const editorType = this.#currentEditorType;
@@ -19669,8 +20007,8 @@ class DrawLayer {
 
 
 
-const pdfjsVersion = "4.3.100";
-const pdfjsBuild = "0cd5252aa";
+const pdfjsVersion = "4.4.151";
+const pdfjsBuild = "1d357f742";
 
 var __webpack_exports__AbortException = __webpack_exports__.AbortException;
 var __webpack_exports__AnnotationEditorLayer = __webpack_exports__.AnnotationEditorLayer;
@@ -19697,6 +20035,7 @@ var __webpack_exports__PasswordResponses = __webpack_exports__.PasswordResponses
 var __webpack_exports__PermissionFlag = __webpack_exports__.PermissionFlag;
 var __webpack_exports__PixelsPerInch = __webpack_exports__.PixelsPerInch;
 var __webpack_exports__RenderingCancelledException = __webpack_exports__.RenderingCancelledException;
+var __webpack_exports__TextLayer = __webpack_exports__.TextLayer;
 var __webpack_exports__UnexpectedResponseException = __webpack_exports__.UnexpectedResponseException;
 var __webpack_exports__Util = __webpack_exports__.Util;
 var __webpack_exports__VerbosityLevel = __webpack_exports__.VerbosityLevel;
@@ -19717,6 +20056,6 @@ var __webpack_exports__setLayerDimensions = __webpack_exports__.setLayerDimensio
 var __webpack_exports__shadow = __webpack_exports__.shadow;
 var __webpack_exports__updateTextLayer = __webpack_exports__.updateTextLayer;
 var __webpack_exports__version = __webpack_exports__.version;
-export { __webpack_exports__AbortException as AbortException, __webpack_exports__AnnotationEditorLayer as AnnotationEditorLayer, __webpack_exports__AnnotationEditorParamsType as AnnotationEditorParamsType, __webpack_exports__AnnotationEditorType as AnnotationEditorType, __webpack_exports__AnnotationEditorUIManager as AnnotationEditorUIManager, __webpack_exports__AnnotationLayer as AnnotationLayer, __webpack_exports__AnnotationMode as AnnotationMode, __webpack_exports__CMapCompressionType as CMapCompressionType, __webpack_exports__ColorPicker as ColorPicker, __webpack_exports__DOMSVGFactory as DOMSVGFactory, __webpack_exports__DrawLayer as DrawLayer, __webpack_exports__FeatureTest as FeatureTest, __webpack_exports__GlobalWorkerOptions as GlobalWorkerOptions, __webpack_exports__ImageKind as ImageKind, __webpack_exports__InvalidPDFException as InvalidPDFException, __webpack_exports__MissingPDFException as MissingPDFException, __webpack_exports__OPS as OPS, __webpack_exports__Outliner as Outliner, __webpack_exports__PDFDataRangeTransport as PDFDataRangeTransport, __webpack_exports__PDFDateString as PDFDateString, __webpack_exports__PDFWorker as PDFWorker, __webpack_exports__PasswordResponses as PasswordResponses, __webpack_exports__PermissionFlag as PermissionFlag, __webpack_exports__PixelsPerInch as PixelsPerInch, __webpack_exports__RenderingCancelledException as RenderingCancelledException, __webpack_exports__UnexpectedResponseException as UnexpectedResponseException, __webpack_exports__Util as Util, __webpack_exports__VerbosityLevel as VerbosityLevel, __webpack_exports__XfaLayer as XfaLayer, __webpack_exports__build as build, __webpack_exports__createValidAbsoluteUrl as createValidAbsoluteUrl, __webpack_exports__fetchData as fetchData, __webpack_exports__getDocument as getDocument, __webpack_exports__getFilenameFromUrl as getFilenameFromUrl, __webpack_exports__getPdfFilenameFromUrl as getPdfFilenameFromUrl, __webpack_exports__getXfaPageViewport as getXfaPageViewport, __webpack_exports__isDataScheme as isDataScheme, __webpack_exports__isPdfFile as isPdfFile, __webpack_exports__noContextMenu as noContextMenu, __webpack_exports__normalizeUnicode as normalizeUnicode, __webpack_exports__renderTextLayer as renderTextLayer, __webpack_exports__setLayerDimensions as setLayerDimensions, __webpack_exports__shadow as shadow, __webpack_exports__updateTextLayer as updateTextLayer, __webpack_exports__version as version };
+export { __webpack_exports__AbortException as AbortException, __webpack_exports__AnnotationEditorLayer as AnnotationEditorLayer, __webpack_exports__AnnotationEditorParamsType as AnnotationEditorParamsType, __webpack_exports__AnnotationEditorType as AnnotationEditorType, __webpack_exports__AnnotationEditorUIManager as AnnotationEditorUIManager, __webpack_exports__AnnotationLayer as AnnotationLayer, __webpack_exports__AnnotationMode as AnnotationMode, __webpack_exports__CMapCompressionType as CMapCompressionType, __webpack_exports__ColorPicker as ColorPicker, __webpack_exports__DOMSVGFactory as DOMSVGFactory, __webpack_exports__DrawLayer as DrawLayer, __webpack_exports__FeatureTest as FeatureTest, __webpack_exports__GlobalWorkerOptions as GlobalWorkerOptions, __webpack_exports__ImageKind as ImageKind, __webpack_exports__InvalidPDFException as InvalidPDFException, __webpack_exports__MissingPDFException as MissingPDFException, __webpack_exports__OPS as OPS, __webpack_exports__Outliner as Outliner, __webpack_exports__PDFDataRangeTransport as PDFDataRangeTransport, __webpack_exports__PDFDateString as PDFDateString, __webpack_exports__PDFWorker as PDFWorker, __webpack_exports__PasswordResponses as PasswordResponses, __webpack_exports__PermissionFlag as PermissionFlag, __webpack_exports__PixelsPerInch as PixelsPerInch, __webpack_exports__RenderingCancelledException as RenderingCancelledException, __webpack_exports__TextLayer as TextLayer, __webpack_exports__UnexpectedResponseException as UnexpectedResponseException, __webpack_exports__Util as Util, __webpack_exports__VerbosityLevel as VerbosityLevel, __webpack_exports__XfaLayer as XfaLayer, __webpack_exports__build as build, __webpack_exports__createValidAbsoluteUrl as createValidAbsoluteUrl, __webpack_exports__fetchData as fetchData, __webpack_exports__getDocument as getDocument, __webpack_exports__getFilenameFromUrl as getFilenameFromUrl, __webpack_exports__getPdfFilenameFromUrl as getPdfFilenameFromUrl, __webpack_exports__getXfaPageViewport as getXfaPageViewport, __webpack_exports__isDataScheme as isDataScheme, __webpack_exports__isPdfFile as isPdfFile, __webpack_exports__noContextMenu as noContextMenu, __webpack_exports__normalizeUnicode as normalizeUnicode, __webpack_exports__renderTextLayer as renderTextLayer, __webpack_exports__setLayerDimensions as setLayerDimensions, __webpack_exports__shadow as shadow, __webpack_exports__updateTextLayer as updateTextLayer, __webpack_exports__version as version };
 
 //# sourceMappingURL=pdf.mjs.map
