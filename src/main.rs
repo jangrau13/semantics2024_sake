@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::string::String;
 use std::fs::{File};
-use std::io::{Read, Write};
+use std::io::{Cursor, Read, Write};
 use axum::{routing::{get}, Router, Extension, middleware, Json};
 use std::ops::Deref;
 use std::path::{PathBuf};
@@ -22,7 +22,7 @@ use tera::
     Tera, Context,
 };
 use tower::ServiceBuilder;
-use pdf::file::{FileOptions};
+use pdf::file::{FileOptions, NoCache, NoLog};
 use pdf::primitive::{Primitive};
 use graph_rdfa_processor::RdfaGraph;
 use sophia::api::prelude::*;
@@ -208,7 +208,7 @@ async fn save_pdf(
     let my_atomic_store = get_local_atomic_store(manager, atomic_secret_key).await.unwrap();
     match process_multipart(multipart).await {
         Ok((filename, pdf_data)) => {
-            match upload_file_to_atomic(filename, &my_atomic_store, pdf_data, atomic_auth_hedaer, atomic_secret_key).await {
+            match upload_file_to_atomic(filename, &my_atomic_store, &pdf_data, atomic_auth_hedaer, atomic_secret_key).await {
                 Ok(_) => (StatusCode::OK, "File uploaded successfully").into_response(),
                 Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Failed to upload file").into_response(),
             }
@@ -369,8 +369,9 @@ async fn handle_request(
             let file_name = my_url_id.clone() + ".pdf";
             let file = get_latest_file(&*my_url_id, &my_atomic_store, atomic_auth_hedaer, atomic_secret_key).await.unwrap();
             match update_pdf(file, &file_name, &my_atomic_store, atomic_auth_hedaer, atomic_secret_key).await {
-                Ok(_) => {
-                    if let Some(output) = get_annotations(&my_url_id, content_type).await {
+                Ok(updated_string) => {
+
+                    if let Some(output) = get_annotations(&updated_string, content_type).await {
                         (response_headers, output.into_response())
                     } else {
                         let mut context = Context::new();
@@ -610,12 +611,12 @@ fn get_latest_version(
 async fn upload_file_to_atomic(
     my_pdf_name: String,
     my_atomic_store: &Store,
-    file_content: Vec<u8>,
+    file_content: &Vec<u8>,
     auth_header: &str,
     atomic_secret_key: &str,
 ) -> Result<bool, String> {
     let form = multipart::Form::new()
-        .part("file", multipart::Part::bytes(file_content).file_name(my_pdf_name.clone()));
+        .part("file", multipart::Part::bytes(file_content.clone()).file_name(my_pdf_name.clone()));
 
     // Make the POST request to upload the file
     let client = Client::new();
@@ -693,7 +694,7 @@ async fn update_pdf(
     my_atomic_store: &Store,
     auth_header: &str,
     atomic_secret_key: &str,
-) -> Result<bool, String> {
+) -> Result<Vec<u8>, String> {
     let my_atomic_agent = get_local_atomic_agent(atomic_secret_key).unwrap();
     let mut doc = lopdf::Document::load_from(pdf).map_err(|e| format!("Failed to load PDF: {:?}", e))?;
     let mut delete_me = Vec::new();
@@ -735,18 +736,13 @@ async fn update_pdf(
     }
     let mut file_contents = Vec::new();
     doc.save_to(&mut file_contents).unwrap();
-    upload_file_to_atomic(pdf_name.to_string(), my_atomic_store, file_contents, auth_header, atomic_secret_key).await.expect("TODO: panic message");
-    Ok(true)
+    upload_file_to_atomic(pdf_name.to_string(), my_atomic_store, &file_contents, auth_header, atomic_secret_key).await.expect("TODO: panic message");
+    Ok(file_contents)
 }
 
-async fn get_annotations(pdf_name: &str, serializer_name: &str) -> Option<String> {
-    let full_pdf_name = pdf_name.to_owned() + ".pdf";
-    let file_path = PathBuf::from("public/pdf").join(&full_pdf_name);
-
-    if !file_path.exists() {
-        return None;
-    }
-    let my_pdf_file = FileOptions::uncached().open(file_path).unwrap();
+async fn get_annotations(file_contents: &Vec<u8>, serializer_name: &str) -> Option<String> {
+    let file_option = FileOptions::uncached();
+    let my_pdf_file = file_option.load(file_contents.as_slice()).unwrap();
     let mut main_graph_from_pdf = FastGraph::new();
     for pdf_scan_result in my_pdf_file.scan() {
         if let Ok(scan_item) = pdf_scan_result {

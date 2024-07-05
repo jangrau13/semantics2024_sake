@@ -1,25 +1,11 @@
-# WISER PDF Annotator
+# SAKE
 
-Some PoC of Jan to create a PDF Annotator for a better world.
-
-## How to update
-1. make some changes
-2. update git like
-```console
-cd pdf_js
-git add .
-git commit -m "some message"
-git push origin poc
-cd ..
-git add .
-git commit -m "some other message"
-git push
-```
+A Semantic Authoring and Annotation Tool for Knowledge Extraction
 
 ## How to run
 
 Prerequisite: [Shuttle](https://docs.shuttle.rs/getting-started/installation)
-and a SECRETS.toml
+and a SECRETS.toml (see [Example](example.Secrets.toml))
 
 1. run 
 ```

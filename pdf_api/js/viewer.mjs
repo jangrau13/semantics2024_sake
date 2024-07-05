@@ -10423,7 +10423,7 @@ class PDFViewer {
   #scaleTimeoutId = null;
   #textLayerMode = TextLayerMode.ENABLE;
   constructor(options) {
-    const viewerVersion = "4.4.155";
+    const viewerVersion = "4.4.156";
     if (version !== viewerVersion) {
       throw new Error(`The API version "${version}" does not match the Viewer version "${viewerVersion}".`);
     }
@@ -14902,8 +14902,8 @@ loglevel_plugin_prefix.apply(loglevel, {
     return date.toISOString();
   }
 });
-const pdfjsVersion = "4.4.155";
-const pdfjsBuild = "8ff471dc2";
+const pdfjsVersion = "4.4.156";
+const pdfjsBuild = "3cc30435b";
 const AppConstants = {
   LinkTarget: LinkTarget,
   RenderingStates: RenderingStates,
